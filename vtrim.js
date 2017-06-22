@@ -98,6 +98,7 @@ function format_time(time, for_output) {
 }
 
 function run_ffmpeg(start, end) {
+	var result = null;
 	var path = get_path();
 	var input = path.full;
 	var ext = state.get_ext() || path.ext;
@@ -136,12 +137,18 @@ function run_ffmpeg(start, end) {
 	}
 	args.push(output);
 	
-	mp.utils[subprocess]({
+	var handle = mp.utils[subprocess]({
 		args: args,
 		cancellable: false
 	});
 	
-	return output;
+	if (handle !== true && handle.stderr !== '') {
+		result = 'Error: ' + handle.stderr;
+	} else {
+		result = 'Output file: ' + output;
+	}
+	
+	return result;
 }
 
 function osd_message(message, duration) {
@@ -170,8 +177,8 @@ function trim_video(start, end) {
 	
 	if (end > start) {
 		osd_message(formatted_times +  ' '  + output_info());
-		var output = run_ffmpeg(start, end);
-		osd_message('Output file: ' + output);
+		var result = run_ffmpeg(start, end);
+		osd_message(result);
 		reset();
 	} else {
 		osd_message('End time can\'t be higher than start time (' + formatted_times + ').');
