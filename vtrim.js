@@ -22,7 +22,7 @@ var state = (function state_initializer() {
 	var start = null;
 	var ffmpeg = get_opt('ffmpeg', 'ffmpeg');
 	var bps = get_opt('bps', '1M');
-	var size = get_opt('size', '1280x720');
+	var size_hint = parse_size_hint(get_opt('size-hint', '1280:720'));
 	var ext = get_opt('ext', 'webm');
 	var detached = get_opt('detached', false);
 	var no_audio = false;
@@ -33,7 +33,7 @@ var state = (function state_initializer() {
 		set_start: function (value) { start = value; },
 		get_ffmpeg: function () { return ffmpeg; },
 		get_bps: function () { return bps; },
-		get_size: function () { return size; },
+		get_size_hint: function () { return size_hint; },
 		get_ext: function () { return ext; },
 		is_detached: function () { return detached; },
 		is_no_audio: function () { return no_audio; },
@@ -45,6 +45,65 @@ var state = (function state_initializer() {
 
 
 // Utilities
+
+function is_string(value) {
+	return typeof value === 'string';
+}
+
+function parse_size_hint(value) {
+	var hint = false;
+
+	if (is_string(value)) {
+		var tokens = value.split(':', 3);
+
+		if (tokens.length >= 2) {
+			hint = {
+				w: Number.parseInt(tokens[0], 10) || 0,
+				h: Number.parseInt(tokens[1], 10) || 0,
+				force: tokens[2] === 'force'
+			};
+		}
+	}
+
+	return hint;
+}
+
+function get_video_size() {
+	var w = mp.get_property_number('width');
+	var h = mp.get_property_number('height');
+
+	return {
+		w: w,
+		h: h
+	};
+}
+
+function calc_size(hint, video_size) {
+	if (hint.force) {
+		return hint;
+	}
+
+	var video_px = video_size.w * video_size.h;
+	var hint_px = hint.w * hint.h;
+
+	if (video_px <= hint_px) {
+		return video_size;
+	}
+	
+	var ratio = video_size.w / video_size.h;
+	var h = Math.sqrt(hint_px / ratio);
+	var w = ratio * h;
+
+	return {
+		w: Math.round(w),
+		h: Math.round(h)
+	};
+}
+
+function calc_size_ffmpeg(hint, video_size) {
+	var result = calc_size(hint, video_size);
+	return result.w + 'x' + result.h;
+}
 
 function get_playback_time() {
 	return mp.get_property_number('playback-time');
@@ -106,7 +165,7 @@ function run_ffmpeg(start, end) {
 	var duration = end - start;
 	var subprocess = state.is_detached() ? 'subprocess_detached' : 'subprocess';
 	var bps = state.get_bps();
-	var size = state.get_size();
+	var size_hint = state.get_size_hint();
 	var loglevel = 'error';
 
 	var args = [
@@ -125,9 +184,9 @@ function run_ffmpeg(start, end) {
 		args.push('-b:v');
 		args.push(bps);
 	}
-	if (size) {
+	if (size_hint) {
 		args.push('-s:v');
-		args.push(size);
+		args.push(calc_size_ffmpeg(size_hint, get_video_size()));
 	}
 	if (state.is_no_audio()) {
 		args.push('-an');
