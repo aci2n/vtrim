@@ -21,14 +21,14 @@
 
 var state = (function state_initializer() {
 	var ffmpeg = get_opt('ffmpeg', 'ffmpeg');
-	var bps = get_opt('bps', false);
-	var size_hint = parse_size_hint(get_opt('size-hint', false));
-	var ext = get_opt('ext', false);
+	var bitrate = get_opt('bitrate', '1M');
+	var size_hint = parse_size_hint(get_opt('size-hint', '1280:720'));
+	var ext = get_opt('ext', 'webm');
 	var detached = get_opt('detached', false) === 'true';
 	
 	return {
 		get_ffmpeg: function () { return ffmpeg; },
-		get_bps: function () { return bps; },
+		get_bitrate: function () { return bitrate; },
 		get_size_hint: function () { return size_hint; },
 		get_ext: function () { return ext; },
 		is_detached: function () { return detached; }
@@ -156,6 +156,10 @@ function get_video_size() {
 	};
 }
 
+function get_audio_channels() {
+	return mp.get_property('audio-params/channels');
+}
+
 
 // ffmpeg
 
@@ -174,7 +178,7 @@ function get_ffmpeg_args(start, end, mode) {
 	var ext = state.get_ext() || path.ext;
 	var output = format_output_file(path.no_ext, ext, start, end);
 	var duration = end - start;
-	var bps = state.get_bps();
+	var bitrate = state.get_bitrate();
 	var size_hint = state.get_size_hint();
 	var loglevel = 'error';
 	var args = [
@@ -189,9 +193,9 @@ function get_ffmpeg_args(start, end, mode) {
 		'-t',
 		duration
 	];
-	if (bps) {
+	if (bitrate) {
 		args.push('-b:v');
-		args.push(bps);
+		args.push(bitrate);
 	}
 	if (size_hint) {
 		args.push('-s:v');
@@ -199,6 +203,12 @@ function get_ffmpeg_args(start, end, mode) {
 	}
 	if (mode.no_audio) {
 		args.push('-an');
+	} else {
+		// workaround for ffmpeg issue when encoding a 5.1(side) channel layout with libopus
+		if (ext === 'webm' && get_audio_channels() === '5.1(side)') {
+			args.push('-filter:a');
+			args.push('channelmap=channel_layout=5.1');
+		}
 	}
 	if (mode.no_subs) {
 		args.push('-sn');
