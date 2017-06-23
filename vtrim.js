@@ -245,13 +245,9 @@ function run_ffmpeg(start, end, mode) {
 
 // Handler helpers
 
-function handle_start(no_subs, no_audio) {
+function handle_start(mode) {
 	var ab_loop = get_ab_loop();
-	var mode = {
-		no_subs: no_subs,
-		no_audio: no_audio
-	};
-	
+
 	if (is_number(ab_loop.a) && is_number(ab_loop.b)) {
 		cmd_ab_loop();
 		trim_video(ab_loop.a, ab_loop.b, mode);
@@ -281,30 +277,22 @@ function mode_info(mode) {
 }
 
 
-// Handlers
-
-function handle_start_all_enabled() {
-	handle_start(false, false);
-}
-
-function handle_start_no_subs() {
-	handle_start(true, false);
-}
-
-function handle_start_no_audio() {
-	handle_start(false, true);
-}
-
-function handle_start_no_subs_no_audio() {
-	handle_start(true, true);
-}
-
-
 // Main
 
 (function main() {
-	mp.add_key_binding('n', handle_start_all_enabled);
-	mp.add_key_binding('shift+n', handle_start_no_subs);
-	mp.add_key_binding('ctrl+n', handle_start_no_audio);
-	mp.add_key_binding('alt+n', handle_start_no_subs_no_audio);
+	function create_handler(no_subs, no_audio) {
+		var mode = {
+			no_subs: no_subs,
+			no_audio: no_audio
+		};
+		
+		return function handler() {
+			handle_start(mode);
+		};
+	}
+	
+	mp.add_key_binding('n', 'default', create_handler(false, false));
+	mp.add_key_binding('shift+n', 'no-subs', create_handler(true, false));
+	mp.add_key_binding('ctrl+n', 'no-audio', create_handler(false, true));
+	mp.add_key_binding('alt+n', 'no-subs-no-audio', create_handler(true, true));
 }());
