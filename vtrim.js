@@ -47,28 +47,42 @@ function is_object(value) {
 }
 
 function is_number(value) {
-	return typeof value === 'number';
+	return typeof value === 'number' && !isNaN(value);
 }
 
 
 // Video resizing
+
+function is_valid_dimension(dim) {
+	return is_number(dim) && (dim > 0) && (dim % 2 === 0);
+}
 
 function parse_size_hint(value) {
 	var hint = false;
 
 	if (is_string(value)) {
 		var tokens = value.split(':', 3);
-
+		
 		if (tokens.length >= 2) {
-			hint = {
-				w: Number.parseInt(tokens[0], 10) || 0,
-				h: Number.parseInt(tokens[1], 10) || 0,
-				force: tokens[2] === 'force'
-			};
+			var w = parseInt(tokens[0], 10);
+			var h = parseInt(tokens[1], 10);
+			
+			if (is_valid_dimension(w) && is_valid_dimension(h)) {
+				hint = {
+					w: w,
+					h: h,
+					force: tokens[2] === 'force'
+				};
+			}
 		}
 	}
 
 	return hint;
+}
+
+function round_even(num) {
+	var op = num > 0 ? Math.floor : Math.ceil;
+	return op(num + op(num % 2));
 }
 
 function calc_size(hint, video_size) {
@@ -88,8 +102,8 @@ function calc_size(hint, video_size) {
 	var w = ratio * h;
 
 	return {
-		w: Math.round(w),
-		h: Math.round(h)
+		w: round_even(w),
+		h: round_even(h)
 	};
 }
 
@@ -127,8 +141,9 @@ function get_opt(opt, def) {
 	return mp.get_opt('vtrim-' + opt) || def;
 }
 
-function osd_message(message, duration) {
+function print_info(message, duration) {
 	mp.osd_message('[vtrim] ' + message, duration || 5);
+	mp.msg.info(message);
 }
 
 function get_video_size() {
@@ -210,7 +225,7 @@ function run_ffmpeg(start, end, mode) {
 	} else {
 		result = {
 			error: false,
-			info: 'Output file: ' + output
+			info: 'Output file: ' + args.pop()
 		};
 	}
 	
@@ -228,20 +243,20 @@ function handle_start(no_subs, no_audio) {
 	};
 	
 	if (is_number(ab_loop.a) && is_number(ab_loop.b)) {
+		cmd_ab_loop();
 		trim_video(ab_loop.a, ab_loop.b, mode);
 	} else {
-		osd_message('AB-loop not defined.');
+		print_info('A-B loop not defined.');
 	}
 }
 
-function trim_video(start, end, mode) {	
+function trim_video(start, end, mode) {
 	if (end > start) {
-		osd_message(mode_info(mode));
+		print_info('Running... ' + mode_info(mode));
 		var result = run_ffmpeg(start, end, mode);
-		osd_message(result.info);
-		cmd_ab_loop();
+		print_info(result.info);
 	} else {
-		osd_message('End time can\'t be higher than start time.');
+		print_info('End time can\'t be higher than start time.');
 	}
 }
 
