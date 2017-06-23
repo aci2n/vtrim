@@ -24,14 +24,12 @@ var state = (function state_initializer() {
 	var bitrate = get_opt('bitrate', '1M');
 	var size_hint = parse_size_hint(get_opt('size-hint', '1280:720'));
 	var ext = get_opt('ext', 'webm');
-	var detached = get_opt('detached', false) === 'true';
 	
 	return {
 		get_ffmpeg: function () { return ffmpeg; },
 		get_bitrate: function () { return bitrate; },
 		get_size_hint: function () { return size_hint; },
-		get_ext: function () { return ext; },
-		is_detached: function () { return detached; }
+		get_ext: function () { return ext; }
 	};
 }());
 
@@ -218,28 +216,35 @@ function get_ffmpeg_args(start, end, mode) {
 	return args;
 }
 
+function ffmpeg_result(handle, detached, output) {
+	if (detached) {
+		return 'Running ffmpeg detached. Output: ' + output;
+	}
+	
+	if (!is_object(handle)) {
+		return 'Unexpected handle type: ' + (typeof handle);
+	}
+	
+	if (handle.stderr) {
+		return 'ffmpeg error: ' + handle.stderr;
+	}
+	
+	if (handle.error) {
+		return 'error: ' + handle.error;
+	}
+	
+	return 'Output: ' + output;
+}
+
 function run_ffmpeg(start, end, mode) {
-	var result = null;
 	var args = get_ffmpeg_args(start, end, mode);
-	var subprocess_type = state.is_detached() ? 'subprocess_detached' : 'subprocess';
+	var subprocess_type = mode.detached ? 'subprocess_detached' : 'subprocess';
 	var handle = mp.utils[subprocess_type]({
 		args: args,
 		cancellable: false
 	});
 	
-	if (is_object(handle) && is_string(handle.stderr) && handle.stderr !== '') {
-		result = {
-			error: true,
-			info: 'ffmpeg error: ' + handle.stderr
-		};
-	} else {
-		result = {
-			error: false,
-			info: 'Output file: ' + args.pop()
-		};
-	}
-	
-	return result;
+	return ffmpeg_result(handle, mode.detached, args.pop());
 }
 
 
@@ -260,7 +265,7 @@ function trim_video(start, end, mode) {
 	if (end > start) {
 		print_info('Running... ' + mode_info(mode));
 		var result = run_ffmpeg(start, end, mode);
-		print_info(result.info);
+		print_info(result);
 	} else {
 		print_info('End time can\'t be higher than start time.');
 	}
@@ -280,19 +285,25 @@ function mode_info(mode) {
 // Main
 
 (function main() {
-	function create_handler(no_subs, no_audio) {
+	function create_handler(no_subs, no_audio, detached) {
 		var mode = {
 			no_subs: no_subs,
-			no_audio: no_audio
+			no_audio: no_audio,
+			detached: detached
 		};
 		
 		return function handler() {
 			handle_start(mode);
 		};
 	}
-	
-	mp.add_key_binding('n', 'default', create_handler(false, false));
-	mp.add_key_binding('shift+n', 'no-subs', create_handler(true, false));
-	mp.add_key_binding('ctrl+n', 'no-audio', create_handler(false, true));
-	mp.add_key_binding('alt+n', 'no-subs-no-audio', create_handler(true, true));
+
+	mp.add_key_binding('n', 'default', create_handler(false, false, false));
+	mp.add_key_binding('shift+n', 'no-subs', create_handler(true, false, false));
+	mp.add_key_binding('ctrl+n', 'no-audio', create_handler(false, true, false));
+	mp.add_key_binding('ctrl+shift+n', 'no-subs-no-audio', create_handler(true, true, false));
+
+	mp.add_key_binding('alt+n', 'default-detached', create_handler(false, false, true));
+	mp.add_key_binding('alt+shift+n', 'no-subs-detached', create_handler(true, false, true));
+	mp.add_key_binding('alt+ctrl+n', 'no-audio-detached', create_handler(false, true, true));
+	mp.add_key_binding('alt+ctrl+shift+n', 'no-subs-no-audio-detached', create_handler(true, true, true));
 }());
