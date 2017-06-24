@@ -16,25 +16,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-
-// State
-
-var state = (function state_initializer() {
-	var ffmpeg = get_opt('ffmpeg', 'ffmpeg');
-	var bitrate = get_opt('bitrate', '1M');
-	var size_hint = parse_size_hint(get_opt('size-hint', '1280:720'));
-	var ext = get_opt('ext', 'webm');
-	
-	return {
-		get_ffmpeg: function () { return ffmpeg; },
-		get_bitrate: function () { return bitrate; },
-		get_size_hint: function () { return size_hint; },
-		get_ext: function () { return ext; }
-	};
-}());
-
-
-// Basic utilities
+// Utilities
 
 function is_string(value) {
 	return typeof value === 'string';
@@ -47,7 +29,6 @@ function is_object(value) {
 function is_number(value) {
 	return typeof value === 'number' && !isNaN(value);
 }
-
 
 // Video resizing
 
@@ -105,7 +86,6 @@ function calc_size(hint, video_size) {
 	};
 }
 
-
 // mp.* wrappers
 
 function get_ab_loop() {
@@ -158,7 +138,6 @@ function get_audio_channels() {
 	return mp.get_property('audio-params/channels');
 }
 
-
 // ffmpeg
 
 function format_output_file(name, ext, start, end) {
@@ -170,20 +149,17 @@ function calc_size_ffmpeg(hint, video_size) {
 	return result.w + 'x' + result.h;
 }
 
-function get_ffmpeg_args(start, end, mode) {
+function get_ffmpeg_args(start, end, options) {
 	var path = get_path();
 	var input = path.full;
-	var ext = state.get_ext() || path.ext;
+	var ext = options.ext || path.ext;
 	var output = format_output_file(path.no_ext, ext, start, end);
 	var duration = end - start;
-	var bitrate = state.get_bitrate();
-	var size_hint = state.get_size_hint();
-	var loglevel = 'error';
 	var args = [
-		state.get_ffmpeg(),
+		options.ffmpeg,
 		'-n',
 		'-v',
-		loglevel,
+		options.loglevel,
 		'-ss',
 		start,
 		'-i',
@@ -191,15 +167,15 @@ function get_ffmpeg_args(start, end, mode) {
 		'-t',
 		duration
 	];
-	if (bitrate) {
+	if (options.bitrate) {
 		args.push('-b:v');
-		args.push(bitrate);
+		args.push(options.bitrate);
 	}
-	if (size_hint) {
+	if (options.size_hint) {
 		args.push('-s:v');
-		args.push(calc_size_ffmpeg(size_hint, get_video_size()));
+		args.push(calc_size_ffmpeg(options.size_hint, get_video_size()));
 	}
-	if (mode.no_audio) {
+	if (options.no_audio) {
 		args.push('-an');
 	} else {
 		// workaround for ffmpeg issue when encoding a 5.1(side) channel layout with libopus
@@ -208,7 +184,7 @@ function get_ffmpeg_args(start, end, mode) {
 			args.push('channelmap=channel_layout=5.1');
 		}
 	}
-	if (mode.no_subs) {
+	if (options.no_subs) {
 		args.push('-sn');
 	}
 	args.push(output);
@@ -236,64 +212,73 @@ function ffmpeg_result(handle, detached, output) {
 	return 'Output: ' + output;
 }
 
-function run_ffmpeg(start, end, mode) {
-	var args = get_ffmpeg_args(start, end, mode);
-	var subprocess_type = mode.detached ? 'subprocess_detached' : 'subprocess';
+function run_ffmpeg(start, end, options) {
+	var args = get_ffmpeg_args(start, end, options);
+	var subprocess_type = options.detached ? 'subprocess_detached' : 'subprocess';
 	var handle = mp.utils[subprocess_type]({
 		args: args,
 		cancellable: false
 	});
 	
-	return ffmpeg_result(handle, mode.detached, args.pop());
+	return ffmpeg_result(handle, options.detached, args.pop());
 }
 
+// Handler
 
-// Handler helpers
-
-function handle_start(mode) {
+function handle_start(options) {
 	var ab_loop = get_ab_loop();
 
 	if (is_number(ab_loop.a) && is_number(ab_loop.b)) {
 		cmd_ab_loop();
-		trim_video(ab_loop.a, ab_loop.b, mode);
+		trim_video(ab_loop.a, ab_loop.b, options);
 	} else {
 		print_info('A-B loop not defined.');
 	}
 }
 
-function trim_video(start, end, mode) {
+function trim_video(start, end, options) {
 	if (end > start) {
-		print_info('Running... ' + mode_info(mode));
-		var result = run_ffmpeg(start, end, mode);
+		print_info('Running...' + options_info(options));
+		var result = run_ffmpeg(start, end, options);
 		print_info(result);
 	} else {
 		print_info('End time can\'t be higher than start time.');
 	}
 }
 
-function mode_info(mode) {
-	var info = [];
+function options_info(options) {
+	var info = '';
 
-	for (var key in mode) {
-		info.push('[' + (mode[key] ? '+' : '-') + key + ']');
+	for (var key in options) {
+		info += '\n[' + key + ': ' + JSON.stringify(options[key]) + ']';
 	}
 	
-	return info.join(' ');
+	return info;
 }
-
 
 // Main
 
-(function main() {
+(function main() {	
+	var ffmpeg = get_opt('ffmpeg', 'ffmpeg');
+	var bitrate = get_opt('bitrate', '1M');
+	var size_hint = parse_size_hint(get_opt('size-hint', '1280:720'));
+	var ext = get_opt('ext', 'webm');
+	var loglevel = get_opt('loglevel', 'error');
+	
 	function create_handler(no_subs, no_audio, detached) {
-		var mode = {
+		var options = {
 			no_subs: no_subs,
 			no_audio: no_audio,
-			detached: detached
+			detached: detached,
+			ffmpeg: ffmpeg,
+			bitrate: bitrate,
+			size_hint: size_hint,
+			ext: ext,
+			loglevel: loglevel
 		};
 		
 		return function handler() {
-			handle_start(mode);
+			handle_start(options);
 		};
 	}
 
