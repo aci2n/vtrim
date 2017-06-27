@@ -138,6 +138,20 @@ function get_audio_channels() {
 	return mp.get_property('audio-params/channels');
 }
 
+function get_selected_tracks() {
+	var selected = [];
+	var tracks = mp.get_property_native('track-list');
+	
+	for (var i = 0; i < tracks.length; i++) {
+		var track = tracks[i];
+		if (track.selected === true) {
+			selected.push(track['ff-index']);
+		}
+	}
+	
+	return selected;
+}
+
 // ffmpeg
 
 function format_output_file(name, ext, start, end) {
@@ -155,39 +169,47 @@ function get_ffmpeg_args(start, end, options) {
 	var ext = options.ext || path.ext;
 	var output = format_output_file(path.no_ext, ext, start, end);
 	var duration = end - start;
-	var args = [
-		options.ffmpeg,
-		'-n',
-		'-v',
-		options.loglevel,
-		'-ss',
-		start,
-		'-i',
-		input,
-		'-t',
-		duration
-	];
+	var selected_tracks = get_selected_tracks();
+	var args = [];
+	var p = args.push.bind(args);
+	
+	p(options.ffmpeg);
+	p('-n');
+	if (options.loglevel) {
+		p('-v');
+		p(options.loglevel);
+	}
+	p('-ss');
+	p(start);
+	p('-i');
+	p(input);
+	p('-t');
+	p(duration);
 	if (options.bitrate) {
-		args.push('-b:v');
-		args.push(options.bitrate);
+		p('-b:v');
+		p(options.bitrate);
 	}
 	if (options.size_hint) {
-		args.push('-s:v');
-		args.push(calc_size_ffmpeg(options.size_hint, get_video_size()));
+		p('-s:v');
+		p(calc_size_ffmpeg(options.size_hint, get_video_size()));
 	}
 	if (options.no_audio) {
-		args.push('-an');
+		p('-an');
 	} else {
 		// workaround for ffmpeg issue when encoding a 5.1(side) channel layout with libopus
 		if (ext === 'webm' && get_audio_channels() === '5.1(side)') {
-			args.push('-filter:a');
-			args.push('channelmap=channel_layout=5.1');
+			p('-filter:a');
+			p('channelmap=channel_layout=5.1');
 		}
 	}
 	if (options.no_subs) {
-		args.push('-sn');
+		p('-sn');
 	}
-	args.push(output);
+	for (var i = 0; i < selected_tracks.length; i++) {
+		p('-map');
+		p('0:' + selected_tracks[i]);
+	}
+	p(output);
 	
 	return args;
 }
@@ -258,7 +280,7 @@ function options_info(options) {
 
 // Main
 
-(function main() {	
+(function main() {
 	var ffmpeg = get_opt('ffmpeg', 'ffmpeg');
 	var bitrate = get_opt('bitrate', '1M');
 	var size_hint = parse_size_hint(get_opt('size-hint', '1280:720'));
