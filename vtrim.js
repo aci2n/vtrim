@@ -138,15 +138,31 @@ function get_audio_channels() {
 	return mp.get_property('audio-params/channels');
 }
 
+function is_encodable(track) {
+	if (track.type === 'sub' && (track.codec === 'hdmv_pgs_subtitle' || track.codec === 'vobsub')) {
+		return false;
+	}
+	
+	return true;
+}
+
 function get_selected_tracks() {
-	var selected = [];
 	var tracks = mp.get_property_native('track-list');
+	var selected = [];
+	var map = {};
 	
 	for (var i = 0; i < tracks.length; i++) {
 		var track = tracks[i];
-		if (track.selected === true) {
-			selected.push(track['ff-index']);
+		var type = track.type;
+		var override = !(type in map) || (!map[type].selected && track.selected);
+		
+		if (override && is_encodable(track)) {
+			map[type] = track;
 		}
+	}
+	
+	for (var type in map) {
+		selected.push(map[type]['ff-index']);
 	}
 	
 	return selected;
