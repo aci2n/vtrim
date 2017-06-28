@@ -168,6 +168,10 @@ function get_selected_tracks() {
 	return selected;
 }
 
+function get_output_full(output) {
+	return mp.utils.join_path(mp.get_property('working-directory'), output);
+}
+
 // ffmpeg
 
 function format_output_file(name, ext, start, end) {
@@ -238,23 +242,31 @@ function get_ffmpeg_args(start, end, options) {
 }
 
 function ffmpeg_result(handle, detached, output) {
+	function format(message, success) {
+		return {
+			message: message,
+			output: output,
+			success: (success === true)
+		};
+	}
+	
 	if (detached) {
-		return 'Running ffmpeg detached. Output: ' + output;
+		return format('Running ffmpeg detached. Output: ' + output, true);
 	}
 	
 	if (!is_object(handle)) {
-		return 'Unexpected handle type: ' + (typeof handle);
+		return format('Unexpected handle type: ' + (typeof handle));
 	}
 	
 	if (handle.stderr) {
-		return 'ffmpeg error: ' + handle.stderr;
+		return format('ffmpeg error: ' + handle.stderr);
 	}
 	
 	if (handle.error) {
-		return 'error: ' + handle.error;
+		return format('error: ' + handle.error);
 	}
 	
-	return 'Output: ' + output;
+	return format('Output: ' + output, true);
 }
 
 function run_ffmpeg(start, end, options) {
@@ -266,6 +278,69 @@ function run_ffmpeg(start, end, options) {
 	});
 	
 	return ffmpeg_result(handle, options.detached, args.pop());
+}
+
+// Hooks
+
+function parse_hook(str) {
+	var hook = false;
+	
+	if (is_string(str)) {
+		var args = str.split('|');
+		if (args.length > 0) {
+			hook = args;
+		}
+	}
+	
+	return hook;
+}
+
+function parse_hooks(str) {
+	var hooks = [];
+	
+	if (is_string(str)) {
+		var commands = str.split('^');
+		
+		for (var i = 0; i < commands.length; i++) {
+			var hook = parse_hook(commands[i]);
+			
+			if (hook) {
+				hooks.push(hook);
+			}
+		}
+	}
+	
+	return hooks;
+}
+
+function run_hooks(hooks, output) {
+	var tokens = {
+		'${output}': get_output_full(output)
+	};
+	
+	for (var i = 0; i < hooks.length; i++) {
+		var hook = replace_tokens(hooks[i], tokens);
+		
+		mp.utils.subprocess_detached({
+			args: hook
+		});
+	}
+}
+
+function replace_tokens(args, tokens) {
+	var replaced = [];
+	
+	for (var i = 0; i < args.length; i++) {
+		var arg = args[i];
+		
+		for (var token in tokens) {
+			arg = arg.replace(token, tokens[token]);
+		}
+		
+		replaced.push(arg);
+	}
+	
+	return replaced;
 }
 
 // Handler
@@ -285,7 +360,11 @@ function trim_video(start, end, options) {
 	if (end > start) {
 		print_info('Running...' + options_info(options));
 		var result = run_ffmpeg(start, end, options);
-		print_info(result);
+		print_info(result.message);
+		
+		if (result.success && !options.detached) {
+			run_hooks(options.hooks, result.output);
+		}
 	} else {
 		print_info('End time must be higher than start time.');
 	}
@@ -311,6 +390,7 @@ function options_info(options) {
 	var loglevel = get_opt('loglevel', 'error');
 	var video_codec = get_opt('video-codec', null);
 	var audio_codec = get_opt('audio-codec', null);
+	var hooks = parse_hooks(get_opt('hooks', 'C:\\Program Files\\ShareX\\ShareX.exe|${output}'));
 	
 	function create_handler(no_subs, no_audio, detached) {
 		var options = {
@@ -323,7 +403,8 @@ function options_info(options) {
 			ext: ext,
 			loglevel: loglevel,
 			video_codec: video_codec,
-			audio_codec: audio_codec
+			audio_codec: audio_codec,
+			hooks: hooks
 		};
 		
 		return function handler() {
