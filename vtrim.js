@@ -321,7 +321,7 @@ function run_hooks(hooks, output) {
 	for (var i = 0; i < hooks.length; i++) {
 		var hook = replace_tokens(hooks[i], tokens);
 		
-		mp.utils.subprocess_detached({
+		mp.utils.subprocess({
 			args: hook
 		});
 	}
