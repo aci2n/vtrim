@@ -200,6 +200,14 @@ function get_ffmpeg_args(start, end, options) {
 	args.push(input);
 	args.push('-t');
 	args.push(duration);
+	if (options.video_codec) {
+		args.push('-c:v');
+		args.push(options.video_codec);
+	}
+	if (options.audio_codec) {
+		args.push('-c:a');
+		args.push(options.audio_codec);
+	}
 	if (options.bitrate) {
 		args.push('-b:v');
 		args.push(options.bitrate);
@@ -301,6 +309,8 @@ function options_info(options) {
 	var size_hint = parse_size_hint(get_opt('size-hint', '1280:720'));
 	var ext = get_opt('ext', 'webm');
 	var loglevel = get_opt('loglevel', 'error');
+	var video_codec = get_opt('video-codec', null);
+	var audio_codec = get_opt('audio-codec', null);
 	
 	function create_handler(no_subs, no_audio, detached) {
 		var options = {
@@ -311,7 +321,9 @@ function options_info(options) {
 			bitrate: bitrate,
 			size_hint: size_hint,
 			ext: ext,
-			loglevel: loglevel
+			loglevel: loglevel,
+			video_codec: video_codec,
+			audio_codec: audio_codec
 		};
 		
 		return function handler() {
