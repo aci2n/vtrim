@@ -37,7 +37,7 @@ function is_number(value) {
 // Video resizing
 
 function is_valid_dimension(dim) {
-	return is_number(dim) && (dim > 0) && (dim % 2 === 0);
+	return is_number(dim) && dim > 0 && dim % 2 === 0;
 }
 
 function parse_size_hint(value) {
@@ -251,7 +251,7 @@ function ffmpeg_result(handle, detached, output) {
 		return {
 			message: message,
 			output: output,
-			success: (success === true)
+			success: success === true
 		};
 	}
 
@@ -260,7 +260,7 @@ function ffmpeg_result(handle, detached, output) {
 	}
 
 	if (!is_object(handle)) {
-		return format('Unexpected handle type: ' + (typeof handle));
+		return format('Unexpected handle type: ' + typeof handle);
 	}
 
 	if (handle.stderr) {
@@ -303,17 +303,28 @@ function parse_hooks(str) {
 	return hooks;
 }
 
-function run_hooks(hooks, output) {
-	var tokens = create_tokens({
-		output: get_output_full(output)
-	});
+function replace_tokens_in_arg(arg, tokens) {
+	var value = arg;
 
-	for (var i = 0; i < hooks.length; i++) {
-		var hook = replace_tokens(hooks[i], tokens);
-		mp.utils.subprocess({
-			args: hook
-		});
+	for (var i = 0; i < tokens.length; i++) {
+		var token = tokens[i];
+		value = value.replace(token.regexp, token.value);
 	}
+
+	return value;
+}
+
+function replace_tokens(args, tokens) {
+	var replaced = [];
+
+	for (var i = 0; i < args.length; i++) {
+		var value = replace_tokens_in_arg(args[i], tokens);
+		if (value) {
+			replaced.push(value);
+		}
+	}
+
+	return replaced;
 }
 
 function create_tokens(args) {
@@ -333,39 +344,27 @@ function create_tokens(args) {
 	return tokens;
 }
 
-function replace_tokens(args, tokens) {
-	var replaced = [];
+function run_hooks(hooks, output) {
+	var tokens = create_tokens({output: get_output_full(output)});
 
-	for (var i = 0; i < args.length; i++) {
-		var value = replace_tokens_in_arg(args[i], tokens);
-		if (value) {
-			replaced.push(value);
-		}
+	for (var i = 0; i < hooks.length; i++) {
+		var hook = replace_tokens(hooks[i], tokens);
+		mp.utils.subprocess({args: hook});
 	}
-
-	return replaced;
-}
-
-function replace_tokens_in_arg(arg, tokens) {
-	for (var i = 0; i < tokens.length; i++) {
-		var token = tokens[i];
-		arg = arg.replace(token.regexp, token.value);
-	}
-
-	return arg;
 }
 
 // Handler
 
-function handle_start(options) {
-	var ab_loop = get_ab_loop();
+function options_info(options) {
+	var info = '';
 
-	if (is_number(ab_loop.a) && is_number(ab_loop.b)) {
-		cmd_ab_loop();
-		trim_video(ab_loop.a, ab_loop.b, options);
-	} else {
-		print_info('A-B loop not defined.');
+	for (var key in options) {
+		if (options.hasOwnProperty(key)) {
+			info += '\n[' + key + ': ' + JSON.stringify(options[key]) + ']';
+		}
 	}
+
+	return info;
 }
 
 function trim_video(start, end, options) {
@@ -382,16 +381,15 @@ function trim_video(start, end, options) {
 	}
 }
 
-function options_info(options) {
-	var info = '';
+function handle_start(options) {
+	var ab_loop = get_ab_loop();
 
-	for (var key in options) {
-		if (options.hasOwnProperty(key)) {
-			info += '\n[' + key + ': ' + JSON.stringify(options[key]) + ']';
-		}
+	if (is_number(ab_loop.a) && is_number(ab_loop.b)) {
+		cmd_ab_loop();
+		trim_video(ab_loop.a, ab_loop.b, options);
+	} else {
+		print_info('A-B loop not defined.');
 	}
-
-	return info;
 }
 
 // Main

@@ -62,7 +62,10 @@
         "id-blacklist": "error",
         "id-length": "off",
         "id-match": "error",
-        "indent": "off",
+        "indent": [
+            "error",
+            "tab"
+        ],
         "indent-legacy": "off",
         "init-declarations": "error",
         "jsx-quotes": "error",
@@ -82,11 +85,20 @@
         "lines-around-comment": "error",
         "lines-around-directive": "error",
         "max-depth": "error",
-        "max-len": "off",
+        "max-len": [
+            "error",
+            120
+        ],
         "max-lines": "off",
         "max-nested-callbacks": "error",
-        "max-params": "off",
-        "max-statements": "off",
+        "max-params": [
+            "error",
+            4
+        ],
+        "max-statements": [
+            "error",
+            60
+        ],
         "max-statements-per-line": "error",
         "multiline-ternary": [
             "error",
@@ -149,7 +161,7 @@
         "no-new-require": "error",
         "no-new-wrappers": "error",
         "no-octal-escape": "error",
-        "no-param-reassign": "off",
+        "no-param-reassign": "error",
         "no-path-concat": "error",
         "no-plusplus": [
             "error",
@@ -186,7 +198,7 @@
         "no-unmodified-loop-condition": "error",
         "no-unneeded-ternary": "error",
         "no-unused-expressions": "error",
-        "no-use-before-define": "off",
+        "no-use-before-define": "error",
         "no-useless-call": "error",
         "no-useless-computed-key": "error",
         "no-useless-concat": "error",
@@ -199,11 +211,17 @@
         "no-whitespace-before-property": "error",
         "no-with": "error",
         "nonblock-statement-body-position": "error",
-        "object-curly-newline": "off",
+        "object-curly-newline": "error",
         "object-curly-spacing": "error",
         "object-property-newline": "error",
-        "object-shorthand": "off",
-        "one-var": "off",
+        "object-shorthand": [
+            "error",
+            "never"
+        ],
+        "one-var": [
+            "error",
+            "never"
+        ],
         "one-var-declaration-per-line": "error",
         "operator-assignment": [
             "error",
