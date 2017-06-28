@@ -286,28 +286,15 @@ function run_ffmpeg(start, end, options) {
 
 // Hooks
 
-function parse_hook(str) {
-	var hook = null;
-	
-	if (is_string(str)) {
-		var args = str.split('|');
-		if (args.length > 0) {
-			hook = args;
-		}
-	}
-	
-	return hook;
-}
-
 function parse_hooks(str) {
 	var hooks = [];
 	
 	if (is_string(str)) {
 		var commands = str.split(';');
 		for (var i = 0; i < commands.length; i++) {
-			var hook = parse_hook(commands[i]);
-			if (hook) {
-				hooks.push(hook);
+			var command = commands[i];
+			if (command) {
+				hooks.push(command.split('|'));
 			}
 		}
 	}
@@ -331,17 +318,13 @@ function run_hooks(hooks, output) {
 function create_tokens(args) {
 	var tokens = [];
 
-	if (is_object(args)) {
-		for (var key in args) {
-			var value = args[key];
-			if (is_string(value)) {
-				var regexp = new RegExp('\\${' + key + '}', 'g');
-				tokens.push({
-					value: value,
-					regexp: regexp
-				});
-			}
-		}
+	for (var key in args) {
+		var value = args[key];
+		var regexp = new RegExp('\\${' + key + '}', 'g');
+		tokens.push({
+			value: value,
+			regexp: regexp
+		});
 	}
 
 	return tokens;
@@ -350,9 +333,10 @@ function create_tokens(args) {
 function replace_tokens(args, tokens) {
 	var replaced = [];
 	
-	if (is_array(args) && is_array(tokens)) {
-		for (var i = 0; i < args.length; i++) {
-			replaced.push(replace_tokens_in_arg(args[i], tokens));
+	for (var i = 0; i < args.length; i++) {
+		var value = replace_tokens_in_arg(args[i], tokens);
+		if (value) {
+			replaced.push(value);
 		}
 	}
 	
@@ -360,11 +344,9 @@ function replace_tokens(args, tokens) {
 }
 
 function replace_tokens_in_arg(arg, tokens) {
-	if (is_string(arg) && is_array(tokens)) {
-		for (var i = 0; i < tokens.length; i++) {
-			var token = tokens[i];
-			arg = arg.replace(token.regexp, token.value);
-		}
+	for (var i = 0; i < tokens.length; i++) {
+		var token = tokens[i];
+		arg = arg.replace(token.regexp, token.value);
 	}
 
 	return arg;
