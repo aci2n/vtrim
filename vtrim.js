@@ -308,7 +308,7 @@ function replace_tokens_in_arg(arg, tokens) {
 
 	for (var i = 0; i < tokens.length; i++) {
 		var token = tokens[i];
-		value = value.replace(token.regexp, token.value);
+		value = value.replace(token.pattern, token.value);
 	}
 
 	return value;
@@ -333,10 +333,10 @@ function create_tokens(args) {
 	for (var key in args) {
 		if (args.hasOwnProperty(key)) {
 			var value = args[key];
-			var regexp = new RegExp('\\${' + key + '}', 'g');
+			var pattern = new RegExp('\\$\\{' + key + '\\}', 'g');
 			tokens.push({
 				value: value,
-				regexp: regexp
+				pattern: pattern
 			});
 		}
 	}
@@ -344,12 +344,22 @@ function create_tokens(args) {
 	return tokens;
 }
 
+function hook_result(hook, handle) {
+	var name = hook[0];
+	var message = handle.stderr || handle.error || handle.stdout || '[no output]';
+
+	return name + ': ' + message;
+}
+
 function run_hooks(hooks, output) {
 	var tokens = create_tokens({output: get_output_full(output)});
 
 	for (var i = 0; i < hooks.length; i++) {
 		var hook = replace_tokens(hooks[i], tokens);
-		mp.utils.subprocess({args: hook});
+		var handle = mp.utils.subprocess({args: hook});
+		var result = hook_result(hook, handle);
+		
+		print_info(result);
 	}
 }
 
@@ -360,7 +370,7 @@ function options_info(options) {
 
 	for (var key in options) {
 		if (options.hasOwnProperty(key)) {
-			info += '\n[' + key + ': ' + JSON.stringify(options[key]) + ']';
+			info += ' [' + key + ': ' + JSON.stringify(options[key]) + ']';
 		}
 	}
 
