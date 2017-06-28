@@ -30,6 +30,10 @@ function is_number(value) {
 	return typeof value === 'number' && !isNaN(value);
 }
 
+function is_array(value) {
+	return Array.isArray(value);
+}
+
 // Video resizing
 
 function is_valid_dimension(dim) {
@@ -283,7 +287,7 @@ function run_ffmpeg(start, end, options) {
 // Hooks
 
 function parse_hook(str) {
-	var hook = false;
+	var hook = null;
 	
 	if (is_string(str)) {
 		var args = str.split('|');
@@ -299,11 +303,9 @@ function parse_hooks(str) {
 	var hooks = [];
 	
 	if (is_string(str)) {
-		var commands = str.split('^');
-		
+		var commands = str.split(';');
 		for (var i = 0; i < commands.length; i++) {
 			var hook = parse_hook(commands[i]);
-			
 			if (hook) {
 				hooks.push(hook);
 			}
@@ -314,33 +316,58 @@ function parse_hooks(str) {
 }
 
 function run_hooks(hooks, output) {
-	var tokens = {
-		'${output}': get_output_full(output)
-	};
+	var tokens = create_tokens({
+		output: get_output_full(output)
+	});
 	
 	for (var i = 0; i < hooks.length; i++) {
 		var hook = replace_tokens(hooks[i], tokens);
-		
 		mp.utils.subprocess({
 			args: hook
 		});
 	}
 }
 
+function create_tokens(args) {
+	var tokens = [];
+
+	if (is_object(args)) {
+		for (var key in args) {
+			var value = args[key];
+			if (is_string(value)) {
+				var regexp = new RegExp('\\${' + key + '}', 'g');
+				tokens.push({
+					value: value,
+					regexp: regexp
+				});
+			}
+		}
+	}
+
+	return tokens;
+}
+
 function replace_tokens(args, tokens) {
 	var replaced = [];
 	
-	for (var i = 0; i < args.length; i++) {
-		var arg = args[i];
-		
-		for (var token in tokens) {
-			arg = arg.replace(token, tokens[token]);
+	if (is_array(args) && is_array(tokens)) {
+		for (var i = 0; i < args.length; i++) {
+			replaced.push(replace_tokens_in_arg(args[i], tokens));
 		}
-		
-		replaced.push(arg);
 	}
 	
 	return replaced;
+}
+
+function replace_tokens_in_arg(arg, tokens) {
+	if (is_string(arg) && is_array(tokens)) {
+		for (var i = 0; i < tokens.length; i++) {
+			var token = tokens[i];
+			arg = arg.replace(token.regexp, token.value);
+		}
+	}
+
+	return arg;
 }
 
 // Handler
