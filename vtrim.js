@@ -16,6 +16,10 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+/* global mp */
+
+'use strict';
+
 // Utilities
 
 function is_string(value) {
@@ -30,10 +34,6 @@ function is_number(value) {
 	return typeof value === 'number' && !isNaN(value);
 }
 
-function is_array(value) {
-	return Array.isArray(value);
-}
-
 // Video resizing
 
 function is_valid_dimension(dim) {
@@ -45,11 +45,11 @@ function parse_size_hint(value) {
 
 	if (is_string(value)) {
 		var tokens = value.split(':', 3);
-		
+
 		if (tokens.length >= 2) {
 			var w = parseInt(tokens[0], 10);
 			var h = parseInt(tokens[1], 10);
-			
+
 			if (is_valid_dimension(w) && is_valid_dimension(h)) {
 				hint = {
 					w: w,
@@ -79,7 +79,7 @@ function calc_size(hint, video_size) {
 	if (video_px <= hint_px) {
 		return video_size;
 	}
-	
+
 	var ratio = video_size.w / video_size.h;
 	var h = Math.sqrt(hint_px / ratio);
 	var w = ratio * h;
@@ -111,7 +111,7 @@ function get_path() {
 	var index = full.lastIndexOf('.');
 	var ext = full.substring(index + 1);
 	var no_ext = full.substring(0, index);
-	
+
 	return {
 		full: full,
 		ext: ext,
@@ -146,7 +146,7 @@ function is_encodable(track) {
 	if (track.type === 'sub' && (track.codec === 'hdmv_pgs_subtitle' || track.codec === 'vobsub')) {
 		return false;
 	}
-	
+
 	return true;
 }
 
@@ -154,21 +154,22 @@ function get_selected_tracks() {
 	var tracks = mp.get_property_native('track-list');
 	var selected = [];
 	var map = {};
-	
+
 	for (var i = 0; i < tracks.length; i++) {
 		var track = tracks[i];
-		var type = track.type;
-		var override = !(type in map) || (!map[type].selected && track.selected);
-		
+		var override = !(track.type in map) || (!map[track.type].selected && track.selected);
+
 		if (override && is_encodable(track)) {
-			map[type] = track;
+			map[track.type] = track;
 		}
 	}
-	
+
 	for (var type in map) {
-		selected.push(map[type]['ff-index']);
+		if (map.hasOwnProperty(type)) {
+			selected.push(map[type]['ff-index']);
+		}
 	}
-	
+
 	return selected;
 }
 
@@ -195,7 +196,7 @@ function get_ffmpeg_args(start, end, options) {
 	var duration = end - start;
 	var selected_tracks = get_selected_tracks();
 	var args = [];
-	
+
 	args.push(options.ffmpeg);
 	args.push('-n');
 	if (options.loglevel) {
@@ -241,7 +242,7 @@ function get_ffmpeg_args(start, end, options) {
 		args.push('0:' + selected_tracks[i]);
 	}
 	args.push(output);
-	
+
 	return args;
 }
 
@@ -253,23 +254,23 @@ function ffmpeg_result(handle, detached, output) {
 			success: (success === true)
 		};
 	}
-	
+
 	if (detached) {
 		return format('Running ffmpeg detached. Output: ' + output, true);
 	}
-	
+
 	if (!is_object(handle)) {
 		return format('Unexpected handle type: ' + (typeof handle));
 	}
-	
+
 	if (handle.stderr) {
 		return format('ffmpeg error: ' + handle.stderr);
 	}
-	
+
 	if (handle.error) {
 		return format('error: ' + handle.error);
 	}
-	
+
 	return format('Output: ' + output, true);
 }
 
@@ -280,7 +281,7 @@ function run_ffmpeg(start, end, options) {
 		args: args,
 		cancellable: false
 	});
-	
+
 	return ffmpeg_result(handle, options.detached, args.pop());
 }
 
@@ -288,7 +289,7 @@ function run_ffmpeg(start, end, options) {
 
 function parse_hooks(str) {
 	var hooks = [];
-	
+
 	if (is_string(str)) {
 		var commands = str.split(';');
 		for (var i = 0; i < commands.length; i++) {
@@ -298,7 +299,7 @@ function parse_hooks(str) {
 			}
 		}
 	}
-	
+
 	return hooks;
 }
 
@@ -306,7 +307,7 @@ function run_hooks(hooks, output) {
 	var tokens = create_tokens({
 		output: get_output_full(output)
 	});
-	
+
 	for (var i = 0; i < hooks.length; i++) {
 		var hook = replace_tokens(hooks[i], tokens);
 		mp.utils.subprocess({
@@ -319,12 +320,14 @@ function create_tokens(args) {
 	var tokens = [];
 
 	for (var key in args) {
-		var value = args[key];
-		var regexp = new RegExp('\\${' + key + '}', 'g');
-		tokens.push({
-			value: value,
-			regexp: regexp
-		});
+		if (args.hasOwnProperty(key)) {
+			var value = args[key];
+			var regexp = new RegExp('\\${' + key + '}', 'g');
+			tokens.push({
+				value: value,
+				regexp: regexp
+			});
+		}
 	}
 
 	return tokens;
@@ -332,14 +335,14 @@ function create_tokens(args) {
 
 function replace_tokens(args, tokens) {
 	var replaced = [];
-	
+
 	for (var i = 0; i < args.length; i++) {
 		var value = replace_tokens_in_arg(args[i], tokens);
 		if (value) {
 			replaced.push(value);
 		}
 	}
-	
+
 	return replaced;
 }
 
@@ -370,7 +373,7 @@ function trim_video(start, end, options) {
 		print_info('Running...' + options_info(options));
 		var result = run_ffmpeg(start, end, options);
 		print_info(result.message);
-		
+
 		if (result.success && !options.detached) {
 			run_hooks(options.hooks, result.output);
 		}
@@ -383,9 +386,11 @@ function options_info(options) {
 	var info = '';
 
 	for (var key in options) {
-		info += '\n[' + key + ': ' + JSON.stringify(options[key]) + ']';
+		if (options.hasOwnProperty(key)) {
+			info += '\n[' + key + ': ' + JSON.stringify(options[key]) + ']';
+		}
 	}
-	
+
 	return info;
 }
 
@@ -400,7 +405,7 @@ function options_info(options) {
 	var video_codec = get_opt('video-codec', null);
 	var audio_codec = get_opt('audio-codec', null);
 	var hooks = parse_hooks(get_opt('hooks', 'C:\\Program Files\\ShareX\\ShareX.exe|${output}'));
-	
+
 	function create_handler(no_subs, no_audio, detached) {
 		var options = {
 			no_subs: no_subs,
@@ -415,7 +420,7 @@ function options_info(options) {
 			audio_codec: audio_codec,
 			hooks: hooks
 		};
-		
+
 		return function handler() {
 			handle_start(options);
 		};
