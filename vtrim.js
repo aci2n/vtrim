@@ -41,7 +41,7 @@ function is_valid_dimension(dim) {
 }
 
 function parse_size_hint(value) {
-	var hint = false;
+	var hint = null;
 
 	if (is_string(value)) {
 		var tokens = value.split(':', 3);
@@ -92,6 +92,10 @@ function calc_size(hint, video_size) {
 
 // mp.* wrappers
 
+function script_name() {
+	return 'vtrim';
+}
+
 function get_ab_loop() {
 	var a = mp.get_property_number('ab-loop-a');
 	var b = mp.get_property_number('ab-loop-b');
@@ -120,11 +124,11 @@ function get_path() {
 }
 
 function get_opt(opt, def) {
-	return mp.get_opt('vtrim-' + opt) || def;
+	return mp.get_opt(script_name() + '-' + opt) || def;
 }
 
 function print_info(message, duration) {
-	mp.osd_message('[vtrim] ' + message, duration || 5);
+	mp.osd_message('[' + script_name() + '] ' + message, duration || 5);
 	mp.msg.info(message);
 }
 
@@ -282,7 +286,7 @@ function run_ffmpeg(start, end, options) {
 		cancellable: false
 	});
 
-	return ffmpeg_result(handle, options.detached, args.pop());
+	return ffmpeg_result(handle, options.detached, args[args.length - 1]);
 }
 
 // Hooks
@@ -356,9 +360,12 @@ function run_hooks(hooks, output) {
 
 	for (var i = 0; i < hooks.length; i++) {
 		var hook = replace_tokens(hooks[i], tokens);
-		var handle = mp.utils.subprocess({args: hook});
+		var handle = mp.utils.subprocess({
+			args: hook,
+			cancellable: false
+		});
 		var result = hook_result(hook, handle);
-		
+
 		print_info(result);
 	}
 }
@@ -407,12 +414,12 @@ function handle_start(options) {
 (function main() {
 	var ffmpeg = get_opt('ffmpeg', 'ffmpeg');
 	var bitrate = get_opt('bitrate', '1M');
-	var size_hint = parse_size_hint(get_opt('size-hint', '1280:720'));
+	var size_hint = parse_size_hint(get_opt('size-hint', null));
 	var ext = get_opt('ext', 'webm');
 	var loglevel = get_opt('loglevel', 'error');
 	var video_codec = get_opt('video-codec', null);
 	var audio_codec = get_opt('audio-codec', null);
-	var hooks = parse_hooks(get_opt('hooks', 'C:\\Program Files\\ShareX\\ShareX.exe|${output}'));
+	var hooks = parse_hooks(get_opt('hooks', null));
 
 	function create_handler(no_subs, no_audio, detached) {
 		var options = {

@@ -1,4 +1,7 @@
 {
+	"parserOptions": {
+		"ecmaVersion": 5
+	},
     "extends": "eslint:recommended",
     "rules": {
         "accessor-pairs": "error",
@@ -87,7 +90,7 @@
         "max-depth": "error",
         "max-len": [
             "error",
-            120
+            110
         ],
         "max-lines": "off",
         "max-nested-callbacks": "error",
@@ -235,7 +238,7 @@
         "padding-line-between-statements": "error",
         "prefer-arrow-callback": "error",
         "prefer-const": "error",
-        "prefer-destructuring": "error",
+        "prefer-destructuring": "off",
         "prefer-numeric-literals": "error",
         "prefer-promise-reject-errors": "error",
         "prefer-reflect": "error",
