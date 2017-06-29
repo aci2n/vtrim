@@ -130,8 +130,10 @@ function get_opt(opt, def) {
 	return value || def;
 }
 
-function print_info(message, duration) {
-	mp.osd_message('[' + script_name() + '] ' + message, duration || 5);
+function print_info(message, no_osd) {
+	if (no_osd !== true) {
+		mp.osd_message('[' + script_name() + '] ' + message, 5);
+	}
 	mp.msg.info(message);
 }
 
@@ -184,6 +186,18 @@ function get_selected_tracks() {
 
 function get_output_full(output) {
 	return mp.utils.join_path(mp.get_property('working-directory'), output);
+}
+
+function read_file(fname, max) {
+	var content = null;
+
+	try {
+		content = mp.utils.read_file(fname, max);
+	} catch (e) {
+		print_info('No hooks JSON file found.', true);
+	}
+
+	return content;
 }
 
 // ffmpeg
@@ -304,12 +318,10 @@ function parse_hooks(str) {
 	var hooks = [];
 
 	if (is_string(str)) {
-		var commands = str.split(';');
-		for (var i = 0; i < commands.length; i++) {
-			var command = commands[i];
-			if (command) {
-				hooks.push(command.split('|'));
-			}
+		try {
+			hooks = JSON.parse(str);
+		} catch (e) {
+			print_info('Could not parse hooks JSON file.');
 		}
 	}
 
@@ -443,7 +455,7 @@ function get_default_sub_codec(ext) {
 	var video_codec = get_opt('video-codec', null);
 	var audio_codec = get_opt('audio-codec', null);
 	var sub_codec = get_opt('sub-codec', get_default_sub_codec(ext));
-	var hooks = parse_hooks(get_opt('hooks', null));
+	var hooks = parse_hooks(read_file('vtrim-hooks.json'));
 
 	function create_handler(no_subs, no_audio, detached) {
 		var options = {
