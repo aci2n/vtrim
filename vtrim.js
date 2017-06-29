@@ -377,7 +377,7 @@ function hook_result(hook, handle) {
 }
 
 function run_hooks(hooks, output) {
-	var tokens = create_tokens({output: get_output_full(output)});
+	var tokens = create_tokens({ output: get_output_full(output) });
 
 	for (var i = 0; i < hooks.length; i++) {
 		var hook = replace_tokens(hooks[i], tokens);
@@ -434,13 +434,13 @@ function handle_start(options) {
 
 function get_default_sub_codec(ext) {
 	switch (ext) {
-	case 'mov':
-	case 'mp4':
-		return 'mov_text';
-	case 'avi':
-		return 'xsub';
-	default:
-		return null;
+		case 'mov':
+		case 'mp4':
+			return 'mov_text';
+		case 'avi':
+			return 'xsub';
+		default:
+			return null;
 	}
 }
 

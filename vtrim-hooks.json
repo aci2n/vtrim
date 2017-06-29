@@ -1,0 +1,12 @@
+[
+    [
+        "ShareX",
+        "<output>"
+    ],
+    [
+        "cat",
+        "<output>",
+        ">>",
+        "D:\\Logs\\vtrim.log"
+    ]
+]

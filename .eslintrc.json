@@ -67,7 +67,10 @@
         "id-match": "error",
         "indent": [
             "error",
-            "tab"
+            "tab",
+            {
+                "SwitchCase": 1
+            }
         ],
         "indent-legacy": "off",
         "init-declarations": "error",
@@ -191,7 +194,7 @@
         "no-spaced-func": "error",
         "no-sync": "error",
         "no-tabs": "off",
-        "no-template-curly-in-string": "off",
+        "no-template-curly-in-string": "error",
         "no-ternary": "off",
         "no-throw-literal": "error",
         "no-trailing-spaces": "error",
@@ -215,7 +218,10 @@
         "no-with": "error",
         "nonblock-statement-body-position": "error",
         "object-curly-newline": "error",
-        "object-curly-spacing": "error",
+        "object-curly-spacing": [
+            "error",
+            "always"
+        ],
         "object-property-newline": "error",
         "object-shorthand": [
             "error",
