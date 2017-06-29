@@ -44,7 +44,7 @@ function parse_size_hint(value) {
 	var hint = null;
 
 	if (is_string(value)) {
-		var tokens = value.split(':', 3);
+		var tokens = value.split('x', 3);
 
 		if (tokens.length >= 2) {
 			var w = parseInt(tokens[0], 10);
@@ -124,7 +124,10 @@ function get_path() {
 }
 
 function get_opt(opt, def) {
-	return mp.get_opt(script_name() + '-' + opt) || def;
+	var name = script_name() + '-' + opt;
+	var value = mp.get_opt(name);
+
+	return value || def;
 }
 
 function print_info(message, duration) {
@@ -343,7 +346,7 @@ function create_tokens(args) {
 	for (var key in args) {
 		if (args.hasOwnProperty(key)) {
 			var value = args[key];
-			var pattern = new RegExp('\\$\\{' + key + '\\}', 'g');
+			var pattern = new RegExp('<' + key + '>', 'g');
 			tokens.push({
 				value: value,
 				pattern: pattern
