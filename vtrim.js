@@ -174,6 +174,8 @@ function get_selected_tracks() {
 		}
 	}
 
+	selected.sort();
+
 	return selected;
 }
 
@@ -220,6 +222,10 @@ function get_ffmpeg_args(start, end, options) {
 	if (options.audio_codec) {
 		args.push('-c:a');
 		args.push(options.audio_codec);
+	}
+	if (options.sub_codec) {
+		args.push('-c:s');
+		args.push(options.sub_codec);
 	}
 	if (options.bitrate) {
 		args.push('-b:v');
@@ -409,6 +415,20 @@ function handle_start(options) {
 	}
 }
 
+// Codecs
+
+function get_default_sub_codec(ext) {
+	switch (ext) {
+	case 'mov':
+	case 'mp4':
+		return 'mov_text';
+	case 'avi':
+		return 'xsub';
+	default:
+		return null;
+	}
+}
+
 // Main
 
 (function main() {
@@ -419,6 +439,7 @@ function handle_start(options) {
 	var loglevel = get_opt('loglevel', 'error');
 	var video_codec = get_opt('video-codec', null);
 	var audio_codec = get_opt('audio-codec', null);
+	var sub_codec = get_opt('sub-codec', get_default_sub_codec(ext));
 	var hooks = parse_hooks(get_opt('hooks', null));
 
 	function create_handler(no_subs, no_audio, detached) {
@@ -433,6 +454,7 @@ function handle_start(options) {
 			loglevel: loglevel,
 			video_codec: video_codec,
 			audio_codec: audio_codec,
+			sub_codec: sub_codec,
 			hooks: hooks
 		};
 
