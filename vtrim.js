@@ -188,6 +188,33 @@ function get_output_full(output) {
 
 // ffmpeg
 
+function get_codec_hacks(options, ext) {
+	var codec_hacks = [];
+
+	if (!options.no_audio) {
+		var libopus = options.audio_codec === 'libopus' || (ext === 'webm' && !options.audio_codec);
+
+		if (libopus && get_audio_channels() === '5.1(side)') {
+			codec_hacks.push('-filter:a');
+			codec_hacks.push('channelmap=channel_layout=5.1');
+		}
+	}
+
+	return codec_hacks;
+}
+
+function get_default_sub_codec(ext) {
+	switch (ext) {
+	case 'mov':
+	case 'mp4':
+		return 'mov_text';
+	case 'avi':
+		return 'xsub';
+	default:
+		return null;
+	}
+}
+
 function format_output_file(name, ext, start, end) {
 	return name + ' [' + start.toFixed(3) + '-' + end.toFixed(3) + '].' + ext;
 }
@@ -204,6 +231,7 @@ function get_ffmpeg_args(start, end, options) {
 	var output = format_output_file(path.no_ext, ext, start, end);
 	var duration = end - start;
 	var selected_tracks = get_selected_tracks();
+	var codec_hacks = get_codec_hacks(options, ext);
 	var args = [];
 
 	args.push(options.ffmpeg);
@@ -240,12 +268,6 @@ function get_ffmpeg_args(start, end, options) {
 	}
 	if (options.no_audio) {
 		args.push('-an');
-	} else {
-		// workaround for ffmpeg issue when encoding a 5.1(side) channel layout with libopus
-		if (ext === 'webm' && get_audio_channels() === '5.1(side)') {
-			args.push('-filter:a');
-			args.push('channelmap=channel_layout=5.1');
-		}
 	}
 	if (options.no_subs) {
 		args.push('-sn');
@@ -254,6 +276,7 @@ function get_ffmpeg_args(start, end, options) {
 		args.push('-map');
 		args.push('0:' + selected_tracks[i]);
 	}
+	args = args.concat(codec_hacks);
 	args.push(output);
 
 	return args;
@@ -415,20 +438,6 @@ function handle_start(options) {
 		trim_video(ab_loop.a, ab_loop.b, options);
 	} else {
 		print_info('A-B loop not defined.');
-	}
-}
-
-// Codecs
-
-function get_default_sub_codec(ext) {
-	switch (ext) {
-	case 'mov':
-	case 'mp4':
-		return 'mov_text';
-	case 'avi':
-		return 'xsub';
-	default:
-		return null;
 	}
 }
 
