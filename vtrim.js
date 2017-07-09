@@ -170,13 +170,13 @@ function get_output_full(output) {
 
 // ffmpeg
 
-function map_default(track) {
+function map_default(track, extra) {
 	var map = null;
 
 	if (track && !track.map_skip) {
 		map = {
 			id: '0:' + track['ff-index'],
-			extra: null
+			extra: extra || null
 		};
 	}
 
@@ -187,8 +187,23 @@ function map_video(video) {
 	return map_default(video);
 }
 
-function map_audio(audio, options) {
-	return options.no_audio ? null : map_default(audio);
+function map_audio(audio, options, current) {
+	var map = null;
+
+	if (!options.no_audio) {
+		var extra = [];
+		var libopus = options.audio_codec === 'libopus' || (current.ext === 'webm' && !options.audio_codec);
+		var channels = get_audio_channels();
+
+		if (libopus && channels === '5.1(side)') {
+			extra.push('-filter:a');
+			extra.push('channelmap=channel_layout=5.1');
+		}
+
+		map = map_default(audio, extra);
+	}
+
+	return map;
 }
 
 function map_sub_picture_based(sub, video) {
@@ -248,7 +263,7 @@ function ffmpeg_map_tracks(tracks, options, current) {
 	var args = [];
 	var maps = [
 		map_sub(tracks.sub, tracks.video, options, current),
-		map_audio(tracks.audio, options),
+		map_audio(tracks.audio, options, current),
 		map_video(tracks.video)
 	];
 
@@ -267,21 +282,6 @@ function ffmpeg_map_tracks(tracks, options, current) {
 	}
 
 	return args;
-}
-
-function get_codec_hacks(ext, options) {
-	var codec_hacks = [];
-
-	if (!options.no_audio) {
-		var libopus = options.audio_codec === 'libopus' || (ext === 'webm' && !options.audio_codec);
-
-		if (libopus && get_audio_channels() === '5.1(side)') {
-			codec_hacks.push('-filter:a');
-			codec_hacks.push('channelmap=channel_layout=5.1');
-		}
-	}
-
-	return codec_hacks;
 }
 
 function get_default_sub_codec(ext) {
@@ -371,11 +371,11 @@ function ffmpeg_get_args(start, end, options) {
 		args.push('-s:v');
 		args.push(size);
 	}
-	args = args.concat(get_codec_hacks(ext, options));
 	args = args.concat(ffmpeg_map_tracks(tracks, options, {
 		input: input,
 		size: size,
-		start: start
+		start: start,
+		ext: ext
 	}));
 	ffmpeg_ensure_single_ss(args);
 	args.push(output);
