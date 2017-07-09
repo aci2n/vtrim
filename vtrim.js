@@ -171,33 +171,27 @@ function get_output_full(output) {
 // ffmpeg
 
 function map_default(track) {
-	return {
-		id: '0:' + track['ff-index'],
-		extra: null
-	};
-}
-
-function map_video(tracks, options, map_state) {
 	var map = null;
 
-	if (tracks.video && !map_state.no_video) {
-		map = map_default(tracks.video);
+	if (track && !track.map_skip) {
+		map = {
+			id: '0:' + track['ff-index'],
+			extra: null
+		};
 	}
 
 	return map;
 }
 
-function map_audio(tracks, options) {
-	var map = null;
-
-	if (tracks.audio && !options.no_audio) {
-		map = map_default(tracks.audio);
-	}
-
-	return map;
+function map_video(video) {
+	return map_default(video);
 }
 
-function map_sub_picture_based(video, sub) {
+function map_audio(audio, options) {
+	return options.no_audio ? null : map_default(audio);
+}
+
+function map_sub_picture_based(sub, video) {
 	var id = '[v]';
 	var video_id = map_default(video).id;
 	var sub_id = map_default(sub).id;
@@ -230,16 +224,15 @@ function map_sub_burn_in(sub, input, size, start) {
 	};
 }
 
-function map_sub(tracks, options, map_state, current) {
+function map_sub(sub, video, options, current) {
 	var map = null;
 
-	if (tracks.sub && tracks.video && !options.no_sub) {
-		var sub = tracks.sub;
+	if (sub && video && !options.no_sub) {
 		var picture_based = sub.codec === 'hdmv_pgs_subtitle' || sub.codec === 'dvd_subtitle';
 
 		if (picture_based) {
-			map = map_sub_picture_based(tracks.video, sub);
-			map_state.no_video = true;
+			map = map_sub_picture_based(sub, video);
+			video.map_skip = true;
 		} else if (options.burn_in) {
 			map = map_sub_burn_in(sub, current.input, current.size, current.start);
 		} else {
@@ -252,11 +245,10 @@ function map_sub(tracks, options, map_state, current) {
 
 function ffmpeg_map_tracks(tracks, options, current) {
 	var args = [];
-	var map_state = {no_video: false};
 	var maps = [
-		map_sub(tracks, options, map_state, current),
-		map_audio(tracks, options),
-		map_video(tracks, options, map_state)
+		map_sub(tracks.sub, tracks.video, options, current),
+		map_audio(tracks.audio, options),
+		map_video(tracks.video)
 	];
 
 	for (var i = 0; i < maps.length; i++) {
