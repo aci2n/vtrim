@@ -223,7 +223,7 @@ function map_sub_picture_based(sub, video) {
 	};
 }
 
-function map_sub_burn_in(sub, input, size, start) {
+function map_sub_burn(sub, input, size, start) {
 	var escaped = input.replace(/(\\|:|')/g, '\\$1');
 	var filter = 'subtitles=\'' + escaped + '\':si=' + (sub.id - 1);
 
@@ -251,8 +251,8 @@ function map_sub(sub, video, options, current) {
 		if (picture_based) {
 			map = map_sub_picture_based(sub, video);
 			video.map_skip = true;
-		} else if (options.burn_in) {
-			map = map_sub_burn_in(sub, current.input, current.size, current.start);
+		} else if (options.burn_sub) {
+			map = map_sub_burn(sub, current.input, current.size, current.start);
 		} else {
 			map = map_default(sub);
 		}
@@ -567,7 +567,7 @@ function handle_start(options) {
 	var audio_codec = get_opt('audio-codec', null);
 	var sub_codec = get_opt('sub-codec', get_default_sub_codec(ext));
 	var hooks = parse_hooks(get_opt('hooks', null));
-	var burn_in = get_opt('burn-in', 'false') === 'true';
+	var burn_sub = get_opt('burn-sub', 'false') === 'true';
 	var debug = get_opt('debug', 'false') === 'true';
 
 	function create_handler(no_sub, no_audio, detached) {
@@ -585,7 +585,7 @@ function handle_start(options) {
 			audio_codec: audio_codec,
 			sub_codec: sub_codec,
 			hooks: hooks,
-			burn_in: burn_in,
+			burn_sub: burn_sub,
 			debug: debug
 		};
 
