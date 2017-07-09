@@ -207,7 +207,8 @@ function map_sub_picture_based(sub, video) {
 }
 
 function map_sub_burn_in(sub, input, size, start) {
-	var filter = 'subtitles=\'' + input + '\':si=' + (sub.id - 1);
+	var escaped = input.replace(/(\\|:|')/g, '\\$1');
+	var filter = 'subtitles=\'' + escaped + '\':si=' + (sub.id - 1);
 
 	if (size) {
 		filter += ':original_size=' + size;
