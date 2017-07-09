@@ -16,7 +16,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-/* global mp */
+/* global mp, dump */
 
 'use strict';
 
@@ -171,26 +171,28 @@ function get_output_full(output) {
 // ffmpeg
 
 function map_default(track, extra) {
-	var map = null;
-
-	if (track && !track.map_skip) {
-		map = {
-			id: '0:' + track['ff-index'],
-			extra: extra || null
-		};
-	}
+	var map = {
+		id: '0:' + track['ff-index'],
+		extra: extra || null
+	};
 
 	return map;
 }
 
 function map_video(video) {
-	return map_default(video);
+	var map = null;
+
+	if (video && !video.map_skip) {
+		map = map_default(video);
+	}
+
+	return map;
 }
 
 function map_audio(audio, options, current) {
 	var map = null;
 
-	if (!options.no_audio) {
+	if (audio && !options.no_audio) {
 		var extra = [];
 		var libopus = options.audio_codec === 'libopus' || (current.ext === 'webm' && !options.audio_codec);
 		var channels = get_audio_channels();
@@ -330,7 +332,6 @@ function ffmpeg_get_args(start, end, options) {
 	var input = path.full;
 	var ext = options.ext || path.ext;
 	var output = format_output_file(path.no_ext, ext, start, end);
-	var duration = end - start;
 	var tracks = get_selected_tracks();
 	var size = ffmpeg_calc_size(options.size_hint, get_video_size());
 	var args = [];
@@ -345,8 +346,8 @@ function ffmpeg_get_args(start, end, options) {
 	args.push(start);
 	args.push('-i');
 	args.push(input);
-	args.push('-t');
-	args.push(duration);
+	args.push('-to');
+	args.push(end);
 	if (options.video_codec) {
 		args.push('-c:v');
 		args.push(options.video_codec);
@@ -377,13 +378,18 @@ function ffmpeg_get_args(start, end, options) {
 		start: start,
 		ext: ext
 	}));
-	ffmpeg_ensure_single_ss(args);
 	args.push(output);
+	ffmpeg_ensure_single_ss(args);
+
+	if (options.debug) {
+		dump(tracks);
+		dump(args);
+	}
 
 	return args;
 }
 
-function ffmpeg_result(handle, options, output) {
+function ffmpeg_result(handle, options, output, process_time) {
 	function format(message, success) {
 		return {
 			message: message,
@@ -412,18 +418,20 @@ function ffmpeg_result(handle, options, output) {
 		return format('Ignoring ffmpeg output since loglevel is not error.', true);
 	}
 
-	return format('Output: ' + output, true);
+	return format('Output: ' + output + '. Took: ' + process_time + 'ms.', true);
 }
 
 function run_ffmpeg(start, end, options) {
 	var args = ffmpeg_get_args(start, end, options);
 	var subprocess_type = options.detached ? 'subprocess_detached' : 'subprocess';
+	var process_start = Date.now();
 	var handle = mp.utils[subprocess_type]({
 		args: args,
 		cancellable: false
 	});
+	var process_time = Date.now() - process_start;
 
-	return ffmpeg_result(handle, options, args[args.length - 1]);
+	return ffmpeg_result(handle, options, args[args.length - 1], process_time);
 }
 
 // Hooks
@@ -560,6 +568,7 @@ function handle_start(options) {
 	var sub_codec = get_opt('sub-codec', get_default_sub_codec(ext));
 	var hooks = parse_hooks(get_opt('hooks', null));
 	var burn_in = get_opt('burn-in', 'false') === 'true';
+	var debug = get_opt('debug', 'false') === 'true';
 
 	function create_handler(no_sub, no_audio, detached) {
 		var options = {
@@ -576,7 +585,8 @@ function handle_start(options) {
 			audio_codec: audio_codec,
 			sub_codec: sub_codec,
 			hooks: hooks,
-			burn_in: burn_in
+			burn_in: burn_in,
+			debug: debug
 		};
 
 		return function handler() {
