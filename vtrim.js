@@ -149,37 +149,19 @@ function get_audio_channels() {
 	return mp.get_property('audio-params/channels');
 }
 
-function is_encodable(track) {
-	if (track.type === 'sub' && (track.codec === 'hdmv_pgs_subtitle' || track.codec === 'vobsub')) {
-		return false;
-	}
-
-	return true;
-}
-
 function get_selected_tracks() {
 	var tracks = mp.get_property_native('track-list');
-	var selected = [];
 	var map = {};
 
 	for (var i = 0; i < tracks.length; i++) {
 		var track = tracks[i];
-		var override = !(track.type in map) || (!map[track.type].selected && track.selected);
 
-		if (override && is_encodable(track)) {
+		if (track.selected) {
 			map[track.type] = track;
 		}
 	}
 
-	for (var type in map) {
-		if (map.hasOwnProperty(type)) {
-			selected.push(map[type]['ff-index']);
-		}
-	}
-
-	selected.sort();
-
-	return selected;
+	return map;
 }
 
 function get_output_full(output) {
@@ -188,7 +170,111 @@ function get_output_full(output) {
 
 // ffmpeg
 
-function get_codec_hacks(options, ext) {
+function map_default(track) {
+	return {
+		id: '0:' + track['ff-index'],
+		extra: null
+	};
+}
+
+function map_video(tracks, options, map_state) {
+	var map = null;
+
+	if (tracks.video && !map_state.no_video) {
+		map = map_default(tracks.video);
+	}
+
+	return map;
+}
+
+function map_audio(tracks, options) {
+	var map = null;
+
+	if (tracks.audio && !options.no_audio) {
+		map = map_default(tracks.audio);
+	}
+
+	return map;
+}
+
+function map_sub_picture_based(video, sub) {
+	var id = '[v]';
+	var video_id = map_default(video).id;
+	var sub_id = map_default(sub).id;
+	var filter = '[' + video_id + '][' + sub_id + ']overlay' + id;
+
+	return {
+		id: id,
+		extra: [
+			'-filter_complex',
+			filter
+		]
+	};
+}
+
+function map_sub_burn_in(sub, input, size, start) {
+	var filter = 'subtitles=\'' + input + '\':si=' + (sub.id - 1);
+
+	if (size) {
+		filter += ':original_size=' + size;
+	}
+
+	return {
+		id: null,
+		extra: [
+			'-filter:v',
+			filter
+		]
+	};
+}
+
+function map_sub(tracks, options, map_state, current) {
+	var map = null;
+
+	if (tracks.sub && tracks.video && !options.no_sub) {
+		var sub = tracks.sub;
+		var picture_based = sub.codec === 'hdmv_pgs_subtitle' || sub.codec === 'dvd_subtitle';
+
+		if (picture_based) {
+			map = map_sub_picture_based(tracks.video, sub);
+			map_state.no_video = true;
+		} else if (options.burn_in) {
+			map = map_sub_burn_in(sub, current.input, current.size, current.start);
+		} else {
+			map = map_default(sub);
+		}
+	}
+
+	return map;
+}
+
+function ffmpeg_map_tracks(tracks, options, current) {
+	var args = [];
+	var map_state = {no_video: false};
+	var maps = [
+		map_sub(tracks, options, map_state, current),
+		map_audio(tracks, options),
+		map_video(tracks, options, map_state)
+	];
+
+	for (var i = 0; i < maps.length; i++) {
+		var map = maps[i];
+
+		if (map) {
+			if (map.extra) {
+				args = args.concat(map.extra);
+			}
+			if (map.id) {
+				args.push('-map');
+				args.push(map.id);
+			}
+		}
+	}
+
+	return args;
+}
+
+function get_codec_hacks(ext, options) {
 	var codec_hacks = [];
 
 	if (!options.no_audio) {
@@ -219,9 +305,15 @@ function format_output_file(name, ext, start, end) {
 	return name + ' [' + start.toFixed(3) + '-' + end.toFixed(3) + '].' + ext;
 }
 
-function calc_size_ffmpeg(hint, video_size) {
-	var result = calc_size(hint, video_size);
-	return result.w + 'x' + result.h;
+function ffmpeg_calc_size(hint, video_size) {
+	var result = null;
+
+	if (hint) {
+		var size = calc_size(hint, video_size);
+		result = size.w + 'x' + size.h;
+	}
+
+	return result;
 }
 
 function get_ffmpeg_args(start, end, options) {
@@ -230,8 +322,8 @@ function get_ffmpeg_args(start, end, options) {
 	var ext = options.ext || path.ext;
 	var output = format_output_file(path.no_ext, ext, start, end);
 	var duration = end - start;
-	var selected_tracks = get_selected_tracks();
-	var codec_hacks = get_codec_hacks(options, ext);
+	var tracks = get_selected_tracks();
+	var size = ffmpeg_calc_size(options.size_hint, get_video_size());
 	var args = [];
 
 	args.push(options.ffmpeg);
@@ -258,31 +350,31 @@ function get_ffmpeg_args(start, end, options) {
 		args.push('-c:s');
 		args.push(options.sub_codec);
 	}
-	if (options.bitrate) {
+	if (options.video_bitrate) {
 		args.push('-b:v');
-		args.push(options.bitrate);
+		args.push(options.video_bitrate);
 	}
-	if (options.size_hint) {
+	if (options.audio_bitrate) {
+		args.push('-b:a');
+		args.push(options.audio_bitrate);
+	}
+	if (size) {
 		args.push('-s:v');
-		args.push(calc_size_ffmpeg(options.size_hint, get_video_size()));
+		args.push(size);
 	}
-	if (options.no_audio) {
-		args.push('-an');
-	}
-	if (options.no_subs) {
-		args.push('-sn');
-	}
-	for (var i = 0; i < selected_tracks.length; i++) {
-		args.push('-map');
-		args.push('0:' + selected_tracks[i]);
-	}
-	args = args.concat(codec_hacks);
+	args = args.concat(get_codec_hacks(ext, options));
+	args = args.concat(ffmpeg_map_tracks(tracks, options, {
+		input: input,
+		size: size,
+		start: start
+	}));
 	args.push(output);
+	dump(args);
 
 	return args;
 }
 
-function ffmpeg_result(handle, detached, output) {
+function ffmpeg_result(handle, options, output) {
 	function format(message, success) {
 		return {
 			message: message,
@@ -291,7 +383,7 @@ function ffmpeg_result(handle, detached, output) {
 		};
 	}
 
-	if (detached) {
+	if (options.detached) {
 		return format('Running ffmpeg detached. Output: ' + output, true);
 	}
 
@@ -307,6 +399,10 @@ function ffmpeg_result(handle, detached, output) {
 		return format('error: ' + handle.error);
 	}
 
+	if (options.loglevel !== 'error') {
+		return format('Ignoring ffmpeg output since loglevel is not error.', true);
+	}
+
 	return format('Output: ' + output, true);
 }
 
@@ -318,7 +414,7 @@ function run_ffmpeg(start, end, options) {
 		cancellable: false
 	});
 
-	return ffmpeg_result(handle, options.detached, args[args.length - 1]);
+	return ffmpeg_result(handle, options, args[args.length - 1]);
 }
 
 // Hooks
@@ -445,7 +541,8 @@ function handle_start(options) {
 
 (function main() {
 	var ffmpeg = get_opt('ffmpeg', 'ffmpeg');
-	var bitrate = get_opt('bitrate', '1M');
+	var video_bitrate = get_opt('video-bitrate', '1M');
+	var audio_bitrate = get_opt('audio-bitrate', null);
 	var size_hint = parse_size_hint(get_opt('size-hint', null));
 	var ext = get_opt('ext', 'webm');
 	var loglevel = get_opt('loglevel', 'error');
@@ -453,21 +550,24 @@ function handle_start(options) {
 	var audio_codec = get_opt('audio-codec', null);
 	var sub_codec = get_opt('sub-codec', get_default_sub_codec(ext));
 	var hooks = parse_hooks(get_opt('hooks', null));
+	var burn_in = get_opt('burn-in', 'false') === 'true';
 
-	function create_handler(no_subs, no_audio, detached) {
+	function create_handler(no_sub, no_audio, detached) {
 		var options = {
-			no_subs: no_subs,
+			no_sub: no_sub,
 			no_audio: no_audio,
 			detached: detached,
 			ffmpeg: ffmpeg,
-			bitrate: bitrate,
+			video_bitrate: video_bitrate,
+			audio_bitrate: audio_bitrate,
 			size_hint: size_hint,
 			ext: ext,
 			loglevel: loglevel,
 			video_codec: video_codec,
 			audio_codec: audio_codec,
 			sub_codec: sub_codec,
-			hooks: hooks
+			hooks: hooks,
+			burn_in: burn_in
 		};
 
 		return function handler() {
@@ -476,12 +576,12 @@ function handle_start(options) {
 	}
 
 	mp.add_key_binding('n', 'default', create_handler(false, false, false));
-	mp.add_key_binding('shift+n', 'no-subs', create_handler(true, false, false));
+	mp.add_key_binding('shift+n', 'no-sub', create_handler(true, false, false));
 	mp.add_key_binding('ctrl+n', 'no-audio', create_handler(false, true, false));
-	mp.add_key_binding('ctrl+shift+n', 'no-subs-no-audio', create_handler(true, true, false));
+	mp.add_key_binding('ctrl+shift+n', 'no-sub-no-audio', create_handler(true, true, false));
 
 	mp.add_key_binding('alt+n', 'default-detached', create_handler(false, false, true));
-	mp.add_key_binding('alt+shift+n', 'no-subs-detached', create_handler(true, false, true));
+	mp.add_key_binding('alt+shift+n', 'no-sub-detached', create_handler(true, false, true));
 	mp.add_key_binding('alt+ctrl+n', 'no-audio-detached', create_handler(false, true, true));
-	mp.add_key_binding('alt+ctrl+shift+n', 'no-subs-no-audio-detached', create_handler(true, true, true));
+	mp.add_key_binding('alt+ctrl+shift+n', 'no-sub-no-audio-detached', create_handler(true, true, true));
 }());
