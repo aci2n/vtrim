@@ -222,6 +222,8 @@ function map_sub_burn_in(sub, input, size, start) {
 	return {
 		id: null,
 		extra: [
+			'-ss',
+			start,
 			'-filter:v',
 			filter
 		]
@@ -316,7 +318,21 @@ function ffmpeg_calc_size(hint, video_size) {
 	return result;
 }
 
-function get_ffmpeg_args(start, end, options) {
+function ffmpeg_ensure_single_ss(args) {
+	var indexes = [];
+
+	for (var i = 0; i < args.length; i++) {
+		if (args[i] === '-ss') {
+			indexes.push(i);
+		}
+	}
+
+	for (var j = 0; j < indexes.length - 1; j++) {
+		args.splice(indexes[j], 2);
+	}
+}
+
+function ffmpeg_get_args(start, end, options) {
 	var path = get_path();
 	var input = path.full;
 	var ext = options.ext || path.ext;
@@ -368,8 +384,8 @@ function get_ffmpeg_args(start, end, options) {
 		size: size,
 		start: start
 	}));
+	ffmpeg_ensure_single_ss(args);
 	args.push(output);
-	dump(args);
 
 	return args;
 }
@@ -407,7 +423,7 @@ function ffmpeg_result(handle, options, output) {
 }
 
 function run_ffmpeg(start, end, options) {
-	var args = get_ffmpeg_args(start, end, options);
+	var args = ffmpeg_get_args(start, end, options);
 	var subprocess_type = options.detached ? 'subprocess_detached' : 'subprocess';
 	var handle = mp.utils[subprocess_type]({
 		args: args,
