@@ -170,6 +170,68 @@ function get_output_full(output) {
 
 // ffmpeg
 
+function ffmpeg_result(handle, options, output, process_time) {
+	function format(message, success) {
+		return {
+			message: message,
+			output: output,
+			success: success === true
+		};
+	}
+
+	if (options.detached) {
+		return format('Running ffmpeg detached. Output: ' + output, true);
+	}
+
+	if (!is_object(handle)) {
+		return format('Unexpected handle type: ' + typeof handle);
+	}
+
+	if (handle.stderr) {
+		return format('ffmpeg error: ' + handle.stderr);
+	}
+
+	if (handle.error) {
+		return format('error: ' + handle.error);
+	}
+
+	if (options.loglevel !== 'error') {
+		return format('Ignoring ffmpeg output since loglevel is not error.', true);
+	}
+
+	return format('Output: ' + output + '. Took: ' + process_time + 'ms.', true);
+}
+
+function ffmpeg_subprocess(args, detached, options) {
+	var subprocess_type = detached ? 'subprocess_detached' : 'subprocess';
+	var process_start = Date.now();
+	var handle = mp.utils[subprocess_type]({
+		args: args,
+		cancellable: false
+	});
+	var process_time = Date.now() - process_start;
+
+	return ffmpeg_result(handle, options, args[args.length - 1], process_time);
+}
+
+function ffmpeg_get_initial_args(current, options) {
+	var args = [];
+
+	args.push(options.ffmpeg);
+	if (options.loglevel) {
+		args.push('-loglevel');
+		args.push(options.loglevel);
+	}
+	args.push('-ss');
+	args.push(current.start);
+	args.push('-i');
+	args.push(current.input);
+	args.push('-t');
+	args.push(current.end - current.start);
+
+	return args;
+}
+
 function map_default(track, extra) {
 	var map = {
 		id: '0:' + track['ff-index'],
@@ -189,7 +251,7 @@ function map_video(video) {
 	return map;
 }
 
-function map_audio(audio, options, current) {
+function map_audio(audio, current, options) {
 	var map = null;
 
 	if (audio && !options.no_audio) {
@@ -223,26 +285,53 @@ function map_sub_picture_based(sub, video) {
 	};
 }
 
-function map_sub_burn(sub, input, size, start) {
-	var escaped = input.replace(/(\\|:|')/g, '\\$1');
-	var filter = 'subtitles=\'' + escaped + '\':si=' + (sub.id - 1);
+function ffmpeg_create_sub_file(sub, current, options) {
+	var output = current.output + '.ass';
+	var args = ffmpeg_get_initial_args(current, options);
 
-	if (size) {
-		filter += ':original_size=' + size;
+	args.push('-map');
+	args.push(map_default(sub).id);
+	args.push(output);
+
+	var result = ffmpeg_subprocess(args, false, options);
+
+	if (!result.success) {
+		output = null;
+		print_info('Failed to create intermediate subtitles file.');
 	}
 
-	return {
-		id: null,
-		extra: [
-			'-ss',
-			start,
-			'-filter:v',
-			filter
-		]
-	};
+	if (options.debug) {
+		dump(result);
+	}
+
+	return output;
 }
 
-function map_sub(sub, video, options, current) {
+function map_sub_burn(sub, current, options) {
+	var map = null;
+	var sub_file = ffmpeg_create_sub_file(sub, current, options);
+
+	if (sub_file) {
+		var escaped = sub_file.replace(/(\\|:|')/g, '\\$1');
+		var filter = 'subtitles=\'' + escaped + '\'';
+
+		if (current.size) {
+			filter += ':original_size=' + current.size;
+		}
+
+		map = {
+			id: null,
+			extra: [
+				'-filter:v',
+				filter
+			]
+		};
+	}
+
+	return map;
+}
+
+function map_sub(sub, video, current, options) {
 	var map = null;
 
 	if (sub && video && !options.no_sub) {
@@ -252,7 +341,7 @@ function map_sub(sub, video, options, current) {
 			map = map_sub_picture_based(sub, video);
 			video.map_skip = true;
 		} else if (options.burn_sub) {
-			map = map_sub_burn(sub, current.input, current.size, current.start);
+			map = map_sub_burn(sub, current, options);
 		} else {
 			map = map_default(sub);
 		}
@@ -261,11 +350,12 @@ function map_sub(sub, video, options, current) {
 	return map;
 }
 
-function ffmpeg_map_tracks(tracks, options, current) {
+function ffmpeg_map_tracks(current, options) {
 	var args = [];
+	var tracks = get_selected_tracks();
 	var maps = [
-		map_sub(tracks.sub, tracks.video, options, current),
-		map_audio(tracks.audio, options, current),
+		map_sub(tracks.sub, tracks.video, current, options),
+		map_audio(tracks.audio, current, options),
 		map_video(tracks.video)
 	];
 
@@ -313,41 +403,19 @@ function ffmpeg_calc_size(hint, video_size) {
 	return result;
 }
 
-function ffmpeg_ensure_single_ss(args) {
-	var indexes = [];
-
-	for (var i = 0; i < args.length; i++) {
-		if (args[i] === '-ss') {
-			indexes.push(i);
-		}
-	}
-
-	for (var j = 0; j < indexes.length - 1; j++) {
-		args.splice(indexes[j], 2);
-	}
-}
-
 function ffmpeg_get_args(start, end, options) {
 	var path = get_path();
-	var input = path.full;
 	var ext = options.ext || path.ext;
-	var output = format_output_file(path.no_ext, ext, start, end);
-	var tracks = get_selected_tracks();
-	var size = ffmpeg_calc_size(options.size_hint, get_video_size());
-	var args = [];
+	var current = {
+		input: path.full,
+		output: format_output_file(path.no_ext, ext, start, end),
+		start: start,
+		ext: ext,
+		end: end,
+		size: ffmpeg_calc_size(options.size_hint, get_video_size())
+	};
+	var args = ffmpeg_get_initial_args(current, options);
 
-	args.push(options.ffmpeg);
-	args.push('-n');
-	if (options.loglevel) {
-		args.push('-v');
-		args.push(options.loglevel);
-	}
-	args.push('-ss');
-	args.push(start);
-	args.push('-i');
-	args.push(input);
-	args.push('-to');
-	args.push(end);
 	if (options.video_codec) {
 		args.push('-c:v');
 		args.push(options.video_codec);
@@ -368,70 +436,24 @@ function ffmpeg_get_args(start, end, options) {
 		args.push('-b:a');
 		args.push(options.audio_bitrate);
 	}
-	if (size) {
+	if (current.size) {
 		args.push('-s:v');
-		args.push(size);
+		args.push(current.size);
 	}
-	args = args.concat(ffmpeg_map_tracks(tracks, options, {
-		input: input,
-		size: size,
-		start: start,
-		ext: ext
-	}));
-	args.push(output);
-	ffmpeg_ensure_single_ss(args);
+	args = args.concat(ffmpeg_map_tracks(current, options));
+	args.push(current.output);
 
 	if (options.debug) {
-		dump(tracks);
 		dump(args);
 	}
 
 	return args;
 }
 
-function ffmpeg_result(handle, options, output, process_time) {
-	function format(message, success) {
-		return {
-			message: message,
-			output: output,
-			success: success === true
-		};
-	}
-
-	if (options.detached) {
-		return format('Running ffmpeg detached. Output: ' + output, true);
-	}
-
-	if (!is_object(handle)) {
-		return format('Unexpected handle type: ' + typeof handle);
-	}
-
-	if (handle.stderr) {
-		return format('ffmpeg error: ' + handle.stderr);
-	}
-
-	if (handle.error) {
-		return format('error: ' + handle.error);
-	}
-
-	if (options.loglevel !== 'error') {
-		return format('Ignoring ffmpeg output since loglevel is not error.', true);
-	}
-
-	return format('Output: ' + output + '. Took: ' + process_time + 'ms.', true);
-}
-
 function run_ffmpeg(start, end, options) {
 	var args = ffmpeg_get_args(start, end, options);
-	var subprocess_type = options.detached ? 'subprocess_detached' : 'subprocess';
-	var process_start = Date.now();
-	var handle = mp.utils[subprocess_type]({
-		args: args,
-		cancellable: false
-	});
-	var process_time = Date.now() - process_start;
 
-	return ffmpeg_result(handle, options, args[args.length - 1], process_time);
+	return ffmpeg_subprocess(args, options.detached, options);
 }
 
 // Hooks
