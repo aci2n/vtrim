@@ -228,13 +228,8 @@ function ffmpeg_get_initial_args(current, options) {
 	return args;
 }
 
-function map_default(track, extra) {
-	var map = {
-		id: '0:' + track['ff-index'],
-		extra: extra || null
-	};
-
-	return map;
+function map_default(track) {
+	return '0:' + track['ff-index'];
 }
 
 function map_video(video) {
@@ -251,34 +246,28 @@ function map_audio(audio, current, options) {
 	var map = null;
 
 	if (audio && !options.no_audio) {
-		var extra = [];
 		var libopus = options.audio_codec === 'libopus' || (current.ext === 'webm' && !options.audio_codec);
 		var channels = get_audio_channels();
 
 		if (libopus && channels === '5.1(side)') {
-			extra.push('-filter:a');
-			extra.push('channelmap=channel_layout=5.1');
+			current.filters.audio.push('channelmap=channel_layout=5.1');
 		}
 
-		map = map_default(audio, extra);
+		map = map_default(audio);
 	}
 
 	return map;
 }
 
-function map_sub_picture_based(sub, video) {
+function map_sub_picture_based(sub, video, current) {
 	var id = '[v]';
-	var video_id = map_default(video).id;
-	var sub_id = map_default(sub).id;
+	var video_id = map_default(video);
+	var sub_id = map_default(sub);
 	var filter = '[' + video_id + '][' + sub_id + ']overlay' + id;
 
-	return {
-		id: id,
-		extra: [
-			'-filter_complex',
-			filter
-		]
-	};
+	current.filters.complex.push(filter);
+
+	return id;
 }
 
 function ffmpeg_create_sub_file(sub, current, options) {
@@ -286,7 +275,7 @@ function ffmpeg_create_sub_file(sub, current, options) {
 	var args = ffmpeg_get_initial_args(current, options);
 
 	args.push('-map');
-	args.push(map_default(sub).id);
+	args.push(map_default(sub));
 	args.push(output);
 
 	var result = ffmpeg_subprocess(args, false);
@@ -304,7 +293,6 @@ function ffmpeg_create_sub_file(sub, current, options) {
 }
 
 function map_sub_burn(sub, current, options) {
-	var map = null;
 	var sub_file = ffmpeg_create_sub_file(sub, current, options);
 
 	if (sub_file) {
@@ -315,16 +303,10 @@ function map_sub_burn(sub, current, options) {
 			filter += ':original_size=' + current.size;
 		}
 
-		map = {
-			id: null,
-			extra: [
-				'-filter:v',
-				filter
-			]
-		};
+		current.filters.video.push(filter);
 	}
 
-	return map;
+	return null;
 }
 
 function map_sub(sub, video, current, options) {
@@ -334,7 +316,7 @@ function map_sub(sub, video, current, options) {
 		var picture_based = sub.codec === 'hdmv_pgs_subtitle' || sub.codec === 'dvd_subtitle';
 
 		if (picture_based) {
-			map = map_sub_picture_based(sub, video);
+			map = map_sub_picture_based(sub, video, current);
 			video.map_skip = true;
 		} else if (options.burn_sub) {
 			map = map_sub_burn(sub, current, options);
@@ -359,13 +341,8 @@ function ffmpeg_map_tracks(current, options) {
 		var map = maps[i];
 
 		if (map) {
-			if (map.extra) {
-				args = args.concat(map.extra);
-			}
-			if (map.id) {
-				args.push('-map');
-				args.push(map.id);
-			}
+			args.push('-map');
+			args.push(map);
 		}
 	}
 
@@ -399,6 +376,40 @@ function ffmpeg_calc_size(hint, video_size) {
 	return result;
 }
 
+function ffmpeg_filters(filters) {
+	var args = [];
+	var map = {
+		video: {
+			name: 'vf',
+			sep: ','
+		},
+		audio: {
+			name: 'af',
+			sep: ','
+		},
+		complex: {
+			name: 'filter_complex',
+			sep: ';'
+		}
+	};
+
+	for (var type in map) {
+		if (map.hasOwnProperty(type)) {
+			var type_filters = filters[type];
+
+			if (type_filters.length > 0) {
+				var type_data = map[type];
+				var joined = type_filters.join(type_data.sep);
+
+				args.push('-' + type_data.name);
+				args.push(joined);
+			}
+		}
+	}
+
+	return args;
+}
+
 function ffmpeg_get_args(start, end, options) {
 	var path = get_path();
 	var ext = options.ext || path.ext;
@@ -408,7 +419,12 @@ function ffmpeg_get_args(start, end, options) {
 		start: start,
 		ext: ext,
 		end: end,
-		size: ffmpeg_calc_size(options.size_hint, get_video_size())
+		size: ffmpeg_calc_size(options.size_hint, get_video_size()),
+		filters: {
+			video: [],
+			audio: [],
+			complex: []
+		}
 	};
 	var args = ffmpeg_get_initial_args(current, options);
 
@@ -437,6 +453,7 @@ function ffmpeg_get_args(start, end, options) {
 		args.push(current.size);
 	}
 	args = args.concat(ffmpeg_map_tracks(current, options));
+	args = args.concat(ffmpeg_filters(current.filters));
 	args.push(current.output);
 
 	if (options.debug) {
