@@ -170,7 +170,7 @@ function get_output_full(output) {
 
 // ffmpeg
 
-function ffmpeg_result(handle, options, output, process_time) {
+function ffmpeg_result(handle, detached, output, process_time) {
 	function format(message, success) {
 		return {
 			message: message,
@@ -179,7 +179,7 @@ function ffmpeg_result(handle, options, output, process_time) {
 		};
 	}
 
-	if (options.detached) {
+	if (detached) {
 		return format('Running ffmpeg detached. Output: ' + output, true);
 	}
 
@@ -195,14 +195,10 @@ function ffmpeg_result(handle, options, output, process_time) {
 		return format('error: ' + handle.error);
 	}
 
-	if (options.loglevel !== 'error') {
-		return format('Ignoring ffmpeg output since loglevel is not error.', true);
-	}
-
 	return format('Output: ' + output + '. Took: ' + process_time + 'ms.', true);
 }
 
-function ffmpeg_subprocess(args, detached, options) {
+function ffmpeg_subprocess(args, detached) {
 	var subprocess_type = detached ? 'subprocess_detached' : 'subprocess';
 	var process_start = Date.now();
 	var handle = mp.utils[subprocess_type]({
@@ -211,7 +207,7 @@ function ffmpeg_subprocess(args, detached, options) {
 	});
 	var process_time = Date.now() - process_start;
 
-	return ffmpeg_result(handle, options, args[args.length - 1], process_time);
+	return ffmpeg_result(handle, detached, args[args.length - 1], process_time);
 }
 
 function ffmpeg_get_initial_args(current, options) {
@@ -219,7 +215,7 @@ function ffmpeg_get_initial_args(current, options) {
 
 	args.push(options.ffmpeg);
 	if (options.loglevel) {
-		args.push('-loglevel');
+		args.push('-v');
 		args.push(options.loglevel);
 	}
 	args.push('-ss');
@@ -293,7 +289,7 @@ function ffmpeg_create_sub_file(sub, current, options) {
 	args.push(map_default(sub).id);
 	args.push(output);
 
-	var result = ffmpeg_subprocess(args, false, options);
+	var result = ffmpeg_subprocess(args, false);
 
 	if (!result.success) {
 		output = null;
@@ -453,7 +449,7 @@ function ffmpeg_get_args(start, end, options) {
 function run_ffmpeg(start, end, options) {
 	var args = ffmpeg_get_args(start, end, options);
 
-	return ffmpeg_subprocess(args, options.detached, options);
+	return ffmpeg_subprocess(args, options.detached);
 }
 
 // Hooks
