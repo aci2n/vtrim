@@ -97,13 +97,18 @@ function script_name() {
 }
 
 function get_ab_loop() {
+	var ab_loop = null;
 	var a = mp.get_property_number('ab-loop-a');
 	var b = mp.get_property_number('ab-loop-b');
 
-	return {
-		a: a,
-		b: b
-	};
+	if (is_number(a) && is_number(b)) {
+		ab_loop = {
+			a: a,
+			b: b
+		};
+	}
+
+	return ab_loop;
 }
 
 function cmd_ab_loop() {
@@ -164,10 +169,6 @@ function get_selected_tracks() {
 	return map;
 }
 
-function get_output_full(output) {
-	return mp.utils.join_path(mp.get_property('working-directory'), output);
-}
-
 // ffmpeg
 
 function ffmpeg_result(handle, detached, output, process_time) {
@@ -210,16 +211,20 @@ function ffmpeg_subprocess(args, detached) {
 	return ffmpeg_result(handle, detached, args[args.length - 1], process_time);
 }
 
-function ffmpeg_get_initial_args(current, options) {
+function ffmpeg_get_initial_args(current, options, before_input) {
 	var args = [];
 
 	args.push(options.ffmpeg);
+	args.push('-y');
 	if (options.loglevel) {
 		args.push('-v');
 		args.push(options.loglevel);
 	}
 	args.push('-ss');
 	args.push(current.start);
+	if (before_input) {
+		args = args.concat(before_input);
+	}
 	args.push('-i');
 	args.push(current.input);
 	args.push('-t');
@@ -272,7 +277,11 @@ function map_sub_picture_based(sub, video, current) {
 
 function ffmpeg_create_sub_file(sub, current, options) {
 	var output = current.output + '.ass';
-	var args = ffmpeg_get_initial_args(current, options);
+	var before_input = [
+		'-dump_attachment:t',
+		''
+	];
+	var args = ffmpeg_get_initial_args(current, options, before_input);
 
 	args.push('-map');
 	args.push(map_default(sub));
@@ -292,12 +301,22 @@ function ffmpeg_create_sub_file(sub, current, options) {
 	return output;
 }
 
+function ffmpeg_escape_filter_arg(arg) {
+	var escaped = '';
+
+	if (is_string(arg)) {
+		escaped = arg.replace(/(\\|:|')/g, '\\$1');
+	}
+
+	return escaped;
+}
+
 function map_sub_burn(sub, current, options) {
 	var sub_file = ffmpeg_create_sub_file(sub, current, options);
 
 	if (sub_file) {
-		var escaped = sub_file.replace(/(\\|:|')/g, '\\$1');
-		var filter = 'subtitles=\'' + escaped + '\'';
+		var escaped = ffmpeg_escape_filter_arg(sub_file);
+		var filter = 'subtitles=\'' + escaped + '\':fontsdir=.';
 
 		if (current.size) {
 			filter += ':original_size=' + current.size;
@@ -536,7 +555,7 @@ function hook_result(hook, handle) {
 }
 
 function run_hooks(hooks, output) {
-	var tokens = create_tokens({output: get_output_full(output)});
+	var tokens = create_tokens({output: output});
 
 	for (var i = 0; i < hooks.length; i++) {
 		var hook = replace_tokens(hooks[i], tokens);
@@ -581,7 +600,7 @@ function trim_video(start, end, options) {
 function handle_start(options) {
 	var ab_loop = get_ab_loop();
 
-	if (is_number(ab_loop.a) && is_number(ab_loop.b)) {
+	if (ab_loop) {
 		cmd_ab_loop();
 		trim_video(ab_loop.a, ab_loop.b, options);
 	} else {
