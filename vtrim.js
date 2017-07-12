@@ -34,6 +34,25 @@ function is_number(value) {
 	return typeof value === 'number' && !isNaN(value);
 }
 
+function get_file_parts(filename) {
+	var dir = null;
+	var name = null;
+
+	if (is_string(filename)) {
+		var last_slash = filename.lastIndexOf('/');
+		var last_backslash = filename.lastIndexOf('\\');
+		var index = Math.max(last_slash, last_backslash);
+
+		dir = filename.substring(0, index);
+		name = filename.substring(index);
+	}
+
+	return {
+		dir: dir,
+		name: name
+	};
+}
+
 // Video resizing
 
 function is_valid_dimension(dim) {
@@ -169,6 +188,17 @@ function get_selected_tracks() {
 	return map;
 }
 
+function prepend_cwd(file) {
+	return mp.utils.join_path(mp.get_property('working-directory'), file);
+}
+
+function get_temp_dir() {
+	var script_file = mp.get_script_file();
+	var parts = get_file_parts(script_file);
+
+	return mp.utils.join_path(parts.dir, 'vtrim');
+}
+
 // ffmpeg
 
 function ffmpeg_result(handle, detached, output, process_time) {
@@ -275,27 +305,135 @@ function map_sub_picture_based(sub, video, current) {
 	return id;
 }
 
-function ffmpeg_create_sub_file(sub, current, options) {
-	var output = current.output + '.ass';
-	var before_input = [
-		'-dump_attachment:t',
-		''
+function ffprobe_get_attachments(current, options) {
+	var attachments = null;
+
+	if (options.ffprobe) {
+		var args = [];
+
+		args.push(options.ffprobe);
+		args.push('-v');
+		args.push('quiet');
+		args.push('-show_streams');
+		args.push('-select_streams');
+		args.push('t');
+		args.push('-of');
+		args.push('json');
+		args.push(current.input);
+
+		if (options.debug) {
+			dump(args);
+		}
+
+		var handle = mp.utils.subprocess({
+			args: args,
+			cancellable: false
+		});
+
+		if (handle.stdout) {
+			try {
+				var result = JSON.parse(handle.stdout);
+				attachments = result.streams;
+			} catch (e) {
+				if (options.debug) {
+					dump(e);
+				}
+			}
+		} else {
+			if (options.debug) {
+				dump(handle);
+			}
+		}
+	}
+
+	return attachments;
+}
+
+function ffprobe_get_fonts(current, options) {
+	var mimetypes = [
+		'application/x-truetype-font',
+		'application/vnd.ms-opentype',
+		'application/x-font-ttf'
 	];
+	var fonts = [];
+	var attachments = ffprobe_get_attachments(current, options);
+
+	if (attachments) {
+		for (var i = 0; i < attachments.length; i++) {
+			var attachment = attachments[i];
+			var tags = attachment.tags;
+
+			if (tags.filename && mimetypes.indexOf(tags.mimetype) !== -1) {
+				var font = {
+					index: attachment.index,
+					filename: tags.filename
+				};
+				fonts.push(font);
+			}
+		}
+	}
+
+	return fonts;
+}
+
+function ffmpeg_dump_fonts(current, options) {
+	var args = [];
+
+	if (options.fonts_dir) {
+		var fonts = ffprobe_get_fonts(current, options);
+
+		for (var i = 0; i < fonts.length; i++) {
+			var font = fonts[i];
+
+			args.push('-dump_attachment:' + font.index);
+			args.push(mp.utils.join_path(options.fonts_dir, font.filename));
+		}
+	}
+
+	return args;
+}
+
+function get_sub_file_output(current, options) {
+	var output = null;
+	var ext = '.ass';
+
+	if (options.ass_dir) {
+		var parts = get_file_parts(current.output);
+		output = mp.utils.join_path(options.ass_dir, parts.name);
+	} else {
+		output = current.output;
+	}
+
+	return output + ext;
+}
+
+function ffmpeg_create_sub_file(sub, current, options) {
+	var output = get_sub_file_output(current, options);
+	var before_input = null;
+
+	if (options.keep_fonts) {
+		before_input = ffmpeg_dump_fonts(current, options);
+	}
+
 	var args = ffmpeg_get_initial_args(current, options, before_input);
 
 	args.push('-map');
 	args.push(map_default(sub));
 	args.push(output);
 
-	var result = ffmpeg_subprocess(args, false);
-
-	if (!result.success) {
-		output = null;
-		print_info('Failed to create intermediate subtitles file.');
+	if (options.debug) {
+		dump(args);
 	}
 
-	if (options.debug) {
-		dump(result);
+	var result = ffmpeg_subprocess(args, false);
+
+	if (options.loglevel === 'error' && !result.success) {
+		output = null;
+		print_info('Failed to create intermediate subtitles file.');
+
+		if (options.debug) {
+			dump(result);
+		}
 	}
 
 	return output;
@@ -315,8 +453,13 @@ function map_sub_burn(sub, current, options) {
 	var sub_file = ffmpeg_create_sub_file(sub, current, options);
 
 	if (sub_file) {
-		var escaped = ffmpeg_escape_filter_arg(sub_file);
-		var filter = 'subtitles=\'' + escaped + '\':fontsdir=.';
+		var escaped_sub_file = ffmpeg_escape_filter_arg(sub_file);
+		var filter = 'subtitles=\'' + escaped_sub_file + '\'';
+
+		if (options.fonts_dir) {
+			var escaped_fonts_dir = ffmpeg_escape_filter_arg(options.fonts_dir);
+			filter += ':fontsdir=\'' + escaped_fonts_dir + '\'';
+		}
 
 		if (current.size) {
 			filter += ':original_size=' + current.size;
@@ -555,7 +698,7 @@ function hook_result(hook, handle) {
 }
 
 function run_hooks(hooks, output) {
-	var tokens = create_tokens({output: output});
+	var tokens = create_tokens({output: prepend_cwd(output)});
 
 	for (var i = 0; i < hooks.length; i++) {
 		var hook = replace_tokens(hooks[i], tokens);
@@ -612,6 +755,7 @@ function handle_start(options) {
 
 (function main() {
 	var ffmpeg = get_opt('ffmpeg', 'ffmpeg');
+	var ffprobe = get_opt('ffprobe', 'ffprobe');
 	var video_bitrate = get_opt('video-bitrate', '1M');
 	var audio_bitrate = get_opt('audio-bitrate', null);
 	var size_hint = parse_size_hint(get_opt('size-hint', null));
@@ -623,6 +767,10 @@ function handle_start(options) {
 	var hooks = parse_hooks(get_opt('hooks', null));
 	var burn_sub = get_opt('burn-sub', 'false') === 'true';
 	var debug = get_opt('debug', 'false') === 'true';
+	var keep_fonts = get_opt('keep-fonts', 'false') === 'true';
+	var temp_dir = get_opt('temp-dir', get_temp_dir());
+	var fonts_dir = get_opt('fonts-dir', mp.utils.join_path(temp_dir, 'fonts'));
+	var ass_dir = get_opt('ass-dir', mp.utils.join_path(temp_dir, 'ass'));
 
 	function create_handler(no_sub, no_audio, detached) {
 		var options = {
@@ -630,6 +778,7 @@ function handle_start(options) {
 			no_audio: no_audio,
 			detached: detached,
 			ffmpeg: ffmpeg,
+			ffprobe: ffprobe,
 			video_bitrate: video_bitrate,
 			audio_bitrate: audio_bitrate,
 			size_hint: size_hint,
@@ -640,7 +789,10 @@ function handle_start(options) {
 			sub_codec: sub_codec,
 			hooks: hooks,
 			burn_sub: burn_sub,
-			debug: debug
+			debug: debug,
+			keep_fonts: keep_fonts,
+			fonts_dir: fonts_dir,
+			ass_dir: ass_dir
 		};
 
 		return function handler() {
