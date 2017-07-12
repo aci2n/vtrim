@@ -41,7 +41,7 @@ function get_file_parts(filename) {
 	if (is_string(filename)) {
 		var last_slash = filename.lastIndexOf('/');
 		var last_backslash = filename.lastIndexOf('\\');
-		var index = Math.max(last_slash, last_backslash);
+		var index = Math.max(last_slash, last_backslash) + 1;
 
 		dir = filename.substring(0, index);
 		name = filename.substring(index);
@@ -51,6 +51,17 @@ function get_file_parts(filename) {
 		dir: dir,
 		name: name
 	};
+}
+
+function maybe_join(name, dir) {
+	var joined = name;
+
+	if (dir) {
+		var parts = get_file_parts(name);
+		joined = mp.utils.join_path(dir, parts.name);
+	}
+
+	return joined;
 }
 
 // Video resizing
@@ -394,29 +405,21 @@ function ffmpeg_dump_fonts(current, options) {
 }
 
 function get_sub_file_output(current, options) {
-	var output = null;
-	var ext = '.ass';
+	var output = current.output + '.ass';
 
-	if (options.ass_dir) {
-		var parts = get_file_parts(current.output);
-		output = mp.utils.join_path(options.ass_dir, parts.name);
-	} else {
-		output = current.output;
-	}
-
-	return output + ext;
+	return maybe_join(output, options.ass_dir);
 }
 
 function ffmpeg_create_sub_file(sub, current, options) {
 	var result = null;
 	var output = get_sub_file_output(current, options);
-	var dump_fonts = [];
+	var fonts = [];
 
 	if (options.keep_fonts) {
-		dump_fonts = ffmpeg_dump_fonts(current, options);
+		fonts = ffmpeg_dump_fonts(current, options);
 	}
 
-	var args = ffmpeg_get_initial_args(current, options, dump_fonts);
+	var args = ffmpeg_get_initial_args(current, options, fonts);
 
 	args.push('-map');
 	args.push(map_default(sub));
@@ -438,7 +441,7 @@ function ffmpeg_create_sub_file(sub, current, options) {
 	} else {
 		result = {
 			output: output,
-			dumped_fonts: dump_fonts.length > 0
+			dumped_fonts: fonts.length > 0
 		};
 	}
 
@@ -529,8 +532,10 @@ function get_default_sub_codec(ext) {
 	}
 }
 
-function format_output_file(name, ext, start, end) {
-	return name + ' [' + start.toFixed(3) + '-' + end.toFixed(3) + '].' + ext;
+function get_video_output(name, ext, start, end, video_dir) {
+	var output = name + ' [' + start.toFixed(3) + '-' + end.toFixed(3) + '].' + ext;
+
+	return maybe_join(output, video_dir);
 }
 
 function ffmpeg_calc_size(hint, video_size) {
@@ -583,7 +588,7 @@ function ffmpeg_get_args(start, end, options) {
 	var ext = options.ext || path.ext;
 	var current = {
 		input: path.full,
-		output: format_output_file(path.no_ext, ext, start, end),
+		output: get_video_output(path.no_ext, ext, start, end, options.video_dir),
 		start: start,
 		ext: ext,
 		end: end,
@@ -777,6 +782,7 @@ function handle_start(options) {
 	var temp_dir = get_opt('temp-dir', get_temp_dir());
 	var fonts_dir = get_opt('fonts-dir', mp.utils.join_path(temp_dir, 'fonts'));
 	var ass_dir = get_opt('ass-dir', mp.utils.join_path(temp_dir, 'ass'));
+	var video_dir = get_opt('video-dir', mp.utils.join_path(temp_dir, 'video'));
 
 	function create_handler(no_sub, no_audio, detached) {
 		var options = {
@@ -798,7 +804,8 @@ function handle_start(options) {
 			debug: debug,
 			keep_fonts: keep_fonts,
 			fonts_dir: fonts_dir,
-			ass_dir: ass_dir
+			ass_dir: ass_dir,
+			video_dir: video_dir
 		};
 
 		return function handler() {
