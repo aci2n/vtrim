@@ -408,14 +408,15 @@ function get_sub_file_output(current, options) {
 }
 
 function ffmpeg_create_sub_file(sub, current, options) {
+	var result = null;
 	var output = get_sub_file_output(current, options);
-	var before_input = null;
+	var dump_fonts = [];
 
 	if (options.keep_fonts) {
-		before_input = ffmpeg_dump_fonts(current, options);
+		dump_fonts = ffmpeg_dump_fonts(current, options);
 	}
 
-	var args = ffmpeg_get_initial_args(current, options, before_input);
+	var args = ffmpeg_get_initial_args(current, options, dump_fonts);
 
 	args.push('-map');
 	args.push(map_default(sub));
@@ -425,18 +426,23 @@ function ffmpeg_create_sub_file(sub, current, options) {
 		dump(args);
 	}
 
-	var result = ffmpeg_subprocess(args, false);
+	var subprocess_result = ffmpeg_subprocess(args, false);
 
-	if (options.loglevel === 'error' && !result.success) {
+	if (options.loglevel === 'error' && !subprocess_result.success) {
 		output = null;
 		print_info('Failed to create intermediate subtitles file.');
 
 		if (options.debug) {
-			dump(result);
+			dump(subprocess_result);
 		}
+	} else {
+		result = {
+			output: output,
+			dumped_fonts: dump_fonts.length > 0
+		};
 	}
 
-	return output;
+	return result;
 }
 
 function ffmpeg_escape_filter_arg(arg) {
@@ -450,13 +456,13 @@ function ffmpeg_escape_filter_arg(arg) {
 }
 
 function map_sub_burn(sub, current, options) {
-	var sub_file = ffmpeg_create_sub_file(sub, current, options);
+	var result = ffmpeg_create_sub_file(sub, current, options);
 
-	if (sub_file) {
-		var escaped_sub_file = ffmpeg_escape_filter_arg(sub_file);
+	if (result) {
+		var escaped_sub_file = ffmpeg_escape_filter_arg(result.output);
 		var filter = 'subtitles=\'' + escaped_sub_file + '\'';
 
-		if (options.fonts_dir) {
+		if (result.dumped_fonts) {
 			var escaped_fonts_dir = ffmpeg_escape_filter_arg(options.fonts_dir);
 			filter += ':fontsdir=\'' + escaped_fonts_dir + '\'';
 		}
