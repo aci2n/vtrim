@@ -34,6 +34,10 @@ function is_number(value) {
 	return typeof value === 'number' && !isNaN(value);
 }
 
+function is_undefined(value) {
+	return typeof value === 'undefined';
+}
+
 function get_file_parts(filename) {
 	var dir = null;
 	var name = null;
@@ -151,7 +155,7 @@ function get_opt(opt, def) {
 	var name = script_name() + '-' + opt;
 	var value = mp.get_opt(name);
 
-	return value || def;
+	return is_undefined(value) ? def : value;
 }
 
 function print_info(message, duration) {
