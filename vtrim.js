@@ -53,17 +53,6 @@ function get_file_parts(filename) {
 	};
 }
 
-function maybe_join(name, dir) {
-	var joined = name;
-
-	if (dir) {
-		var parts = get_file_parts(name);
-		joined = mp.utils.join_path(dir, parts.name);
-	}
-
-	return joined;
-}
-
 // Video resizing
 
 function is_valid_dimension(dim) {
@@ -199,15 +188,26 @@ function get_selected_tracks() {
 	return map;
 }
 
-function prepend_cwd(file) {
-	return mp.utils.join_path(mp.get_property('working-directory'), file);
+function join_path(dir, name) {
+	return mp.utils.join_path(dir, name);
+}
+
+function maybe_join_path(dir, name) {
+	var joined = name;
+
+	if (dir) {
+		var parts = get_file_parts(name);
+		joined = join_path(dir, parts.name);
+	}
+
+	return joined;
 }
 
 function get_temp_dir() {
 	var script_file = mp.get_script_file();
 	var parts = get_file_parts(script_file);
 
-	return mp.utils.join_path(parts.dir, 'vtrim');
+	return join_path(parts.dir, 'vtrim');
 }
 
 // ffmpeg
@@ -397,7 +397,7 @@ function ffmpeg_dump_fonts(current, options) {
 			var font = fonts[i];
 
 			args.push('-dump_attachment:' + font.index);
-			args.push(mp.utils.join_path(options.fonts_dir, font.filename));
+			args.push(join_path(options.fonts_dir, font.filename));
 		}
 	}
 
@@ -405,9 +405,7 @@ function ffmpeg_dump_fonts(current, options) {
 }
 
 function get_sub_file_output(current, options) {
-	var output = current.output + '.ass';
-
-	return maybe_join(output, options.ass_dir);
+	return maybe_join_path(options.ass_dir, current.output + '.ass');
 }
 
 function ffmpeg_create_sub_file(sub, current, options) {
@@ -533,9 +531,7 @@ function get_default_sub_codec(ext) {
 }
 
 function get_video_output(name, ext, start, end, video_dir) {
-	var output = name + ' [' + start.toFixed(3) + '-' + end.toFixed(3) + '].' + ext;
-
-	return maybe_join(output, video_dir);
+	return maybe_join_path(video_dir, name + ' [' + start.toFixed(3) + '-' + end.toFixed(3) + '].' + ext);
 }
 
 function ffmpeg_calc_size(hint, video_size) {
@@ -709,7 +705,7 @@ function hook_result(hook, handle) {
 }
 
 function run_hooks(hooks, output) {
-	var tokens = create_tokens({output: prepend_cwd(output)});
+	var tokens = create_tokens({output: output});
 
 	for (var i = 0; i < hooks.length; i++) {
 		var hook = replace_tokens(hooks[i], tokens);
@@ -780,9 +776,9 @@ function handle_start(options) {
 	var debug = get_opt('debug', 'false') === 'true';
 	var keep_fonts = get_opt('keep-fonts', 'false') === 'true';
 	var temp_dir = get_opt('temp-dir', get_temp_dir());
-	var fonts_dir = get_opt('fonts-dir', mp.utils.join_path(temp_dir, 'fonts'));
-	var ass_dir = get_opt('ass-dir', mp.utils.join_path(temp_dir, 'ass'));
-	var video_dir = get_opt('video-dir', mp.utils.join_path(temp_dir, 'video'));
+	var fonts_dir = get_opt('fonts-dir', join_path(temp_dir, 'fonts'));
+	var ass_dir = get_opt('ass-dir', join_path(temp_dir, 'ass'));
+	var video_dir = get_opt('video-dir', join_path(temp_dir, 'video'));
 
 	function create_handler(no_sub, no_audio, detached) {
 		var options = {
