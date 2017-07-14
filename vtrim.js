@@ -316,6 +316,7 @@ function map_sub_picture_based(sub, video, current) {
 	var filter = '[' + video_id + '][' + sub_id + ']overlay' + id;
 
 	current.filters.complex.push(filter);
+	video.map_skip = true;
 
 	return id;
 }
@@ -434,7 +435,6 @@ function ffmpeg_create_sub_file(sub, current, options) {
 	var subprocess_result = ffmpeg_subprocess(args, false);
 
 	if (options.loglevel === 'error' && !subprocess_result.success) {
-		output = null;
 		print_info('Failed to create intermediate subtitles file.');
 
 		if (options.debug) {
@@ -490,7 +490,6 @@ function map_sub(sub, video, current, options) {
 
 		if (picture_based) {
 			map = map_sub_picture_based(sub, video, current);
-			video.map_skip = true;
 		} else if (options.burn_sub) {
 			map = map_sub_burn(sub, current, options);
 		} else {
@@ -612,6 +611,10 @@ function ffmpeg_get_args(start, end, options) {
 	if (options.sub_codec) {
 		args.push('-c:s');
 		args.push(options.sub_codec);
+	}
+	if (options.crf) {
+		args.push('-crf');
+		args.push(options.crf);
 	}
 	if (options.video_bitrate) {
 		args.push('-b:v');
@@ -783,6 +786,7 @@ function handle_start(options) {
 	var fonts_dir = get_opt('fonts-dir', join_path(temp_dir, 'fonts'));
 	var ass_dir = get_opt('ass-dir', join_path(temp_dir, 'ass'));
 	var video_dir = get_opt('video-dir', join_path(temp_dir, 'video'));
+	var crf = get_opt('crf', null);
 
 	function create_handler(no_sub, no_audio, detached) {
 		var options = {
@@ -805,7 +809,8 @@ function handle_start(options) {
 			keep_fonts: keep_fonts,
 			fonts_dir: fonts_dir,
 			ass_dir: ass_dir,
-			video_dir: video_dir
+			video_dir: video_dir,
+			crf: crf
 		};
 
 		return function handler() {
