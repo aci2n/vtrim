@@ -173,10 +173,6 @@ function get_video_size() {
 	};
 }
 
-function get_audio_channels() {
-	return mp.get_property('audio-params/channels');
-}
-
 function get_selected_tracks() {
 	var tracks = mp.get_property_native('track-list');
 	var map = {};
@@ -297,9 +293,8 @@ function map_audio(audio, current, options) {
 
 	if (audio && !options.no_audio) {
 		var libopus = options.audio_codec === 'libopus' || (current.ext === 'webm' && !options.audio_codec);
-		var channels = get_audio_channels();
 
-		if (libopus && channels === '5.1(side)') {
+		if (libopus) {
 			current.filters.audio.push('channelmap=channel_layout=5.1');
 		}
 
@@ -600,6 +595,14 @@ function ffmpeg_get_args(start, end, options) {
 	};
 	var args = ffmpeg_get_initial_args(current, options);
 
+	if (options.crf) {
+		args.push('-crf');
+		args.push(options.crf);
+	}
+	if (options.threads) {
+		args.push('-threads');
+		args.push(options.threads);
+	}
 	if (options.video_codec) {
 		args.push('-c:v');
 		args.push(options.video_codec);
@@ -611,10 +614,6 @@ function ffmpeg_get_args(start, end, options) {
 	if (options.sub_codec) {
 		args.push('-c:s');
 		args.push(options.sub_codec);
-	}
-	if (options.crf) {
-		args.push('-crf');
-		args.push(options.crf);
 	}
 	if (options.video_bitrate) {
 		args.push('-b:v');
@@ -787,6 +786,7 @@ function handle_start(options) {
 	var ass_dir = get_opt('ass-dir', join_path(temp_dir, 'ass'));
 	var video_dir = get_opt('video-dir', join_path(temp_dir, 'video'));
 	var crf = get_opt('crf', null);
+	var threads = get_opt('threads', null);
 
 	function create_handler(no_sub, no_audio, detached) {
 		var options = {
@@ -810,7 +810,8 @@ function handle_start(options) {
 			fonts_dir: fonts_dir,
 			ass_dir: ass_dir,
 			video_dir: video_dir,
-			crf: crf
+			crf: crf,
+			threads: threads
 		};
 
 		return function handler() {
