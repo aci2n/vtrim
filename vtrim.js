@@ -210,6 +210,10 @@ function get_temp_dir() {
 	return join_path(parts.dir, 'vtrim');
 }
 
+function get_audio_params() {
+	return mp.get_property_native('audio-params');
+}
+
 // ffmpeg
 
 function ffmpeg_result(handle, detached, output, process_time) {
@@ -292,10 +296,17 @@ function map_audio(audio, current, options) {
 	var map = null;
 
 	if (audio && !options.no_audio) {
+		var audio_params = get_audio_params();
 		var libopus = options.audio_codec === 'libopus' || (current.ext === 'webm' && !options.audio_codec);
 
 		if (libopus) {
-			current.filters.audio.push('channelmap=channel_layout=5.1');
+			var channel_layout = audio_params.channels;
+
+			if (channel_layout === '5.1(side)') {
+				channel_layout = '5.1';
+			}
+
+			current.filters.audio.push('channelmap=channel_layout=' + channel_layout);
 		}
 
 		map = map_default(audio);
@@ -449,7 +460,8 @@ function ffmpeg_escape_filter_arg(arg) {
 	var escaped = '';
 
 	if (is_string(arg)) {
-		escaped = arg.replace(/(\\|:|')/g, '\\$1');
+		// (´･ω･`)
+		escaped = '\'' + arg.replace(/(\\|:)/g, '\\$1').replace(/([^']*)'/g, '$1\'\\\\\\\'\'') + '\'';
 	}
 
 	return escaped;
@@ -460,11 +472,11 @@ function map_sub_burn(sub, current, options) {
 
 	if (result) {
 		var escaped_sub_file = ffmpeg_escape_filter_arg(result.output);
-		var filter = 'subtitles=\'' + escaped_sub_file + '\'';
+		var filter = 'subtitles=' + escaped_sub_file;
 
 		if (result.dumped_fonts) {
 			var escaped_fonts_dir = ffmpeg_escape_filter_arg(options.fonts_dir);
-			filter += ':fontsdir=\'' + escaped_fonts_dir + '\'';
+			filter += ':fontsdir=' + escaped_fonts_dir;
 		}
 
 		if (current.size) {
