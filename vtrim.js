@@ -214,6 +214,33 @@ function get_audio_params() {
 	return mp.get_property_native('audio-params');
 }
 
+function log_to_file(output, options, data) {
+	var result = null;
+
+	if (options.log_dir) {
+		var parts = get_file_parts(output);
+
+		if (parts.name) {
+			var joined = join_path(options.log_dir, parts.name);
+			var fname = 'file://' + joined + '.log';
+			var str = data;
+
+			try {
+				if (!is_string(str)) {
+					str = JSON.stringify(str, null, 2);
+				}
+
+				mp.utils.write_file(fname, str);
+				result = fname;
+			} catch (e) {
+				print_info('Could not write to log file: ' + e.toString());
+			}
+		}
+	}
+
+	return result;
+}
+
 // ffmpeg
 
 function ffmpeg_result(handle, detached, output, process_time) {
@@ -244,7 +271,7 @@ function ffmpeg_result(handle, detached, output, process_time) {
 	return format('Output: ' + output + '. Took: ' + process_time + 'ms.', true);
 }
 
-function ffmpeg_subprocess(args, detached) {
+function ffmpeg_subprocess(args, detached, options) {
 	var subprocess_type = detached ? 'subprocess_detached' : 'subprocess';
 	var process_start = Date.now();
 	var handle = mp.utils[subprocess_type]({
@@ -252,8 +279,15 @@ function ffmpeg_subprocess(args, detached) {
 		cancellable: false
 	});
 	var process_time = Date.now() - process_start;
+	var output = args[args.length - 1];
+	var result = ffmpeg_result(handle, detached, output, process_time);
 
-	return ffmpeg_result(handle, detached, args[args.length - 1], process_time);
+	log_to_file(output, options, {
+		result: result,
+		args: args
+	});
+
+	return result;
 }
 
 function ffmpeg_get_initial_args(context, options, before_input) {
@@ -438,7 +472,7 @@ function ffmpeg_create_sub_file(sub, context, options) {
 		dump(args);
 	}
 
-	var subprocess_result = ffmpeg_subprocess(args, false);
+	var subprocess_result = ffmpeg_subprocess(args, false, options);
 
 	if (options.loglevel === 'error' && !subprocess_result.success) {
 		print_info('Failed to create intermediate subtitles file.');
@@ -656,7 +690,7 @@ function ffmpeg_get_args(start, end, options) {
 function run_ffmpeg(start, end, options) {
 	var args = ffmpeg_get_args(start, end, options);
 
-	return ffmpeg_subprocess(args, options.detached);
+	return ffmpeg_subprocess(args, options.detached, options);
 }
 
 // Hooks
@@ -800,6 +834,7 @@ function handle_start(options) {
 	var fonts_dir = get_opt('fonts-dir', join_path(temp_dir, 'fonts'));
 	var ass_dir = get_opt('ass-dir', join_path(temp_dir, 'ass'));
 	var video_dir = get_opt('video-dir', join_path(temp_dir, 'video'));
+	var log_dir = get_opt('log-dir', debug ? join_path(temp_dir, 'log') : null);
 	var crf = get_opt('crf', null);
 	var threads = get_opt('threads', null);
 	var font_fallback = get_opt('font-fallback', null);
@@ -826,6 +861,7 @@ function handle_start(options) {
 			fonts_dir: fonts_dir,
 			ass_dir: ass_dir,
 			video_dir: video_dir,
+			log_dir: log_dir,
 			crf: crf,
 			threads: threads,
 			font_fallback: font_fallback
