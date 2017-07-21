@@ -256,7 +256,7 @@ function ffmpeg_subprocess(args, detached) {
 	return ffmpeg_result(handle, detached, args[args.length - 1], process_time);
 }
 
-function ffmpeg_get_initial_args(current, options, before_input) {
+function ffmpeg_get_initial_args(context, options, before_input) {
 	var args = [];
 
 	args.push(options.ffmpeg);
@@ -266,14 +266,14 @@ function ffmpeg_get_initial_args(current, options, before_input) {
 		args.push(options.loglevel);
 	}
 	args.push('-ss');
-	args.push(current.start);
+	args.push(context.start);
 	if (before_input) {
 		args = args.concat(before_input);
 	}
 	args.push('-i');
-	args.push(current.input);
+	args.push(context.input);
 	args.push('-t');
-	args.push(current.end - current.start);
+	args.push(context.end - context.start);
 
 	return args;
 }
@@ -292,21 +292,21 @@ function map_video(video) {
 	return map;
 }
 
-function map_audio(audio, current, options) {
+function map_audio(audio, context, options) {
 	var map = null;
 
 	if (audio && !options.no_audio) {
-		var audio_params = get_audio_params();
-		var libopus = options.audio_codec === 'libopus' || (current.ext === 'webm' && !options.audio_codec);
+		var libopus = options.audio_codec === 'libopus' || (context.ext === 'webm' && !options.audio_codec);
 
 		if (libopus) {
+			var audio_params = get_audio_params();
 			var channel_layout = audio_params.channels;
 
 			if (channel_layout === '5.1(side)') {
 				channel_layout = '5.1';
 			}
 
-			current.filters.audio.push('channelmap=channel_layout=' + channel_layout);
+			context.filters.audio.push('channelmap=channel_layout=' + channel_layout);
 		}
 
 		map = map_default(audio);
@@ -315,19 +315,19 @@ function map_audio(audio, current, options) {
 	return map;
 }
 
-function map_sub_picture_based(sub, video, current) {
+function map_sub_picture_based(sub, video, context) {
 	var id = '[v]';
 	var video_id = map_default(video);
 	var sub_id = map_default(sub);
 	var filter = '[' + video_id + '][' + sub_id + ']overlay' + id;
 
-	current.filters.complex.push(filter);
+	context.filters.complex.push(filter);
 	video.map_skip = true;
 
 	return id;
 }
 
-function ffprobe_get_attachments(current, options) {
+function ffprobe_get_attachments(context, options) {
 	var attachments = null;
 
 	if (options.ffprobe) {
@@ -341,7 +341,7 @@ function ffprobe_get_attachments(current, options) {
 		args.push('t');
 		args.push('-of');
 		args.push('json');
-		args.push(current.input);
+		args.push(context.input);
 
 		if (options.debug) {
 			dump(args);
@@ -371,14 +371,14 @@ function ffprobe_get_attachments(current, options) {
 	return attachments;
 }
 
-function ffprobe_get_fonts(current, options) {
+function ffprobe_get_fonts(context, options) {
 	var mimetypes = [
 		'application/x-truetype-font',
 		'application/vnd.ms-opentype',
 		'application/x-font-ttf'
 	];
 	var fonts = [];
-	var attachments = ffprobe_get_attachments(current, options);
+	var attachments = ffprobe_get_attachments(context, options);
 
 	if (attachments) {
 		for (var i = 0; i < attachments.length; i++) {
@@ -398,11 +398,11 @@ function ffprobe_get_fonts(current, options) {
 	return fonts;
 }
 
-function ffmpeg_dump_fonts(current, options) {
+function ffmpeg_dump_fonts(context, options) {
 	var args = [];
 
 	if (options.fonts_dir) {
-		var fonts = ffprobe_get_fonts(current, options);
+		var fonts = ffprobe_get_fonts(context, options);
 
 		for (var i = 0; i < fonts.length; i++) {
 			var font = fonts[i];
@@ -415,20 +415,20 @@ function ffmpeg_dump_fonts(current, options) {
 	return args;
 }
 
-function get_sub_file_output(current, options) {
-	return maybe_join_path(options.ass_dir, current.output + '.ass');
+function get_sub_file_output(context, options) {
+	return maybe_join_path(options.ass_dir, context.output + '.ass');
 }
 
-function ffmpeg_create_sub_file(sub, current, options) {
+function ffmpeg_create_sub_file(sub, context, options) {
 	var result = null;
-	var output = get_sub_file_output(current, options);
+	var output = get_sub_file_output(context, options);
 	var fonts = [];
 
 	if (options.keep_fonts) {
-		fonts = ffmpeg_dump_fonts(current, options);
+		fonts = ffmpeg_dump_fonts(context, options);
 	}
 
-	var args = ffmpeg_get_initial_args(current, options, fonts);
+	var args = ffmpeg_get_initial_args(context, options, fonts);
 
 	args.push('-map');
 	args.push(map_default(sub));
@@ -467,8 +467,8 @@ function ffmpeg_escape_filter_arg(arg) {
 	return escaped;
 }
 
-function map_sub_burn(sub, current, options) {
-	var result = ffmpeg_create_sub_file(sub, current, options);
+function map_sub_burn(sub, context, options) {
+	var result = ffmpeg_create_sub_file(sub, context, options);
 
 	if (result) {
 		var escaped_sub_file = ffmpeg_escape_filter_arg(result.output);
@@ -477,28 +477,31 @@ function map_sub_burn(sub, current, options) {
 		if (result.dumped_fonts) {
 			var escaped_fonts_dir = ffmpeg_escape_filter_arg(options.fonts_dir);
 			filter += ':fontsdir=' + escaped_fonts_dir;
+		} else if (options.font_fallback) {
+			var escaped_font_style = ffmpeg_escape_filter_arg('FontName=' + options.font_fallback);
+			filter += ':force_style=' + escaped_font_style;
 		}
 
-		if (current.size) {
-			filter += ':original_size=' + current.size;
+		if (context.size) {
+			filter += ':original_size=' + context.size;
 		}
 
-		current.filters.video.push(filter);
+		context.filters.video.push(filter);
 	}
 
 	return null;
 }
 
-function map_sub(sub, video, current, options) {
+function map_sub(sub, video, context, options) {
 	var map = null;
 
 	if (sub && video && !options.no_sub) {
 		var picture_based = sub.codec === 'hdmv_pgs_subtitle' || sub.codec === 'dvd_subtitle';
 
 		if (picture_based) {
-			map = map_sub_picture_based(sub, video, current);
+			map = map_sub_picture_based(sub, video, context);
 		} else if (options.burn_sub) {
-			map = map_sub_burn(sub, current, options);
+			map = map_sub_burn(sub, context, options);
 		} else {
 			map = map_default(sub);
 		}
@@ -507,12 +510,12 @@ function map_sub(sub, video, current, options) {
 	return map;
 }
 
-function ffmpeg_map_tracks(current, options) {
+function ffmpeg_map_tracks(context, options) {
 	var args = [];
 	var tracks = get_selected_tracks();
 	var maps = [
-		map_sub(tracks.sub, tracks.video, current, options),
-		map_audio(tracks.audio, current, options),
+		map_sub(tracks.sub, tracks.video, context, options),
+		map_audio(tracks.audio, context, options),
 		map_video(tracks.video)
 	];
 
@@ -592,7 +595,7 @@ function ffmpeg_filters(filters) {
 function ffmpeg_get_args(start, end, options) {
 	var path = get_path();
 	var ext = options.ext || path.ext;
-	var current = {
+	var context = {
 		input: path.full,
 		output: get_video_output(path.no_ext, ext, start, end, options.video_dir),
 		start: start,
@@ -605,7 +608,7 @@ function ffmpeg_get_args(start, end, options) {
 			complex: []
 		}
 	};
-	var args = ffmpeg_get_initial_args(current, options);
+	var args = ffmpeg_get_initial_args(context, options);
 
 	if (options.crf) {
 		args.push('-crf');
@@ -635,13 +638,13 @@ function ffmpeg_get_args(start, end, options) {
 		args.push('-b:a');
 		args.push(options.audio_bitrate);
 	}
-	if (current.size) {
+	if (context.size) {
 		args.push('-s:v');
-		args.push(current.size);
+		args.push(context.size);
 	}
-	args = args.concat(ffmpeg_map_tracks(current, options));
-	args = args.concat(ffmpeg_filters(current.filters));
-	args.push(current.output);
+	args = args.concat(ffmpeg_map_tracks(context, options));
+	args = args.concat(ffmpeg_filters(context.filters));
+	args.push(context.output);
 
 	if (options.debug) {
 		dump(args);
@@ -781,10 +784,10 @@ function handle_start(options) {
 (function main() {
 	var ffmpeg = get_opt('ffmpeg', 'ffmpeg');
 	var ffprobe = get_opt('ffprobe', 'ffprobe');
-	var video_bitrate = get_opt('video-bitrate', '1M');
+	var video_bitrate = get_opt('video-bitrate', null);
 	var audio_bitrate = get_opt('audio-bitrate', null);
 	var size_hint = parse_size_hint(get_opt('size-hint', null));
-	var ext = get_opt('ext', 'webm');
+	var ext = get_opt('ext', null);
 	var loglevel = get_opt('loglevel', 'error');
 	var video_codec = get_opt('video-codec', null);
 	var audio_codec = get_opt('audio-codec', null);
@@ -799,6 +802,7 @@ function handle_start(options) {
 	var video_dir = get_opt('video-dir', join_path(temp_dir, 'video'));
 	var crf = get_opt('crf', null);
 	var threads = get_opt('threads', null);
+	var font_fallback = get_opt('font-fallback', null);
 
 	function create_handler(no_sub, no_audio, detached) {
 		var options = {
@@ -823,7 +827,8 @@ function handle_start(options) {
 			ass_dir: ass_dir,
 			video_dir: video_dir,
 			crf: crf,
-			threads: threads
+			threads: threads,
+			font_fallback: font_fallback
 		};
 
 		return function handler() {
