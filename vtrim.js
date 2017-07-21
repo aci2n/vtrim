@@ -872,12 +872,8 @@ function handle_start(options) {
 	}
 }
 
-// Main
-
-(function main() {
+function get_options() {
 	var temp_dir = get_opt('temp-dir', get_temp_dir());
-	var profile = get_opt('profile', 'default');
-	var json_options = read_json_options(profile);
 	var ext = get_opt('ext', null);
 	var debug = get_opt('debug', 'false') === 'true';
 	var options = {
@@ -903,15 +899,23 @@ function handle_start(options) {
 		threads: get_opt('threads', null, true),
 		font_fallback: get_opt('font-fallback', mp.get_property('sub-font', null))
 	};
+
+	var profile = get_opt('profile', 'default');
+	var json_options = read_json_options(profile);
+
 	var merged_options = object_assign({}, options, json_options);
 
+	return merged_options;
+}
+
+function add_bindings(options) {
 	function create_handler(no_sub, no_audio, detached) {
 		return function handler() {
-			merged_options.no_sub = no_sub;
-			merged_options.no_audio = no_audio;
-			merged_options.detached = detached;
+			options.no_sub = no_sub;
+			options.no_audio = no_audio;
+			options.detached = detached;
 
-			handle_start(merged_options);
+			handle_start(options);
 		};
 	}
 
@@ -924,4 +928,10 @@ function handle_start(options) {
 	mp.add_key_binding('alt+shift+n', 'no-sub-detached', create_handler(true, false, true));
 	mp.add_key_binding('alt+ctrl+n', 'no-audio-detached', create_handler(false, true, true));
 	mp.add_key_binding('alt+ctrl+shift+n', 'no-sub-no-audio-detached', create_handler(true, true, true));
+}
+
+// Main
+
+(function main() {
+	add_bindings(get_options());
 }());
