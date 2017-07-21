@@ -87,7 +87,10 @@
         ],
         "lines-around-comment": "error",
         "lines-around-directive": "error",
-        "max-depth": "error",
+        "max-depth": [
+			"error",
+			5
+		],
         "max-len": [
             "error",
             110
@@ -241,8 +244,8 @@
         "prefer-destructuring": "off",
         "prefer-numeric-literals": "error",
         "prefer-promise-reject-errors": "error",
-        "prefer-reflect": "error",
-        "prefer-rest-params": "error",
+        "prefer-reflect": "off",
+        "prefer-rest-params": "off",
         "prefer-spread": "error",
         "prefer-template": "off",
         "quote-props": "off",

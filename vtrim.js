@@ -38,6 +38,26 @@ function is_undefined(value) {
 	return typeof value === 'undefined';
 }
 
+function object_assign(target) {
+	if (is_object(target)) {
+		var sources = Array.prototype.slice.call(arguments, 1);
+
+		for (var i = 0; i < sources.length; i++) {
+			var source = sources[i];
+
+			if (is_object(source)) {
+				for (var prop in source) {
+					if (source.hasOwnProperty(prop)) {
+						target[prop] = source[prop];
+					}
+				}
+			}
+		}
+	}
+
+	return target;
+}
+
 function get_file_parts(filename) {
 	var dir = null;
 	var name = null;
@@ -151,11 +171,23 @@ function get_path() {
 	};
 }
 
-function get_opt(opt, def) {
+function get_opt(opt, def, is_int) {
 	var name = script_name() + '-' + opt;
 	var value = mp.get_opt(name);
 
-	return is_undefined(value) ? def : value;
+	if (is_undefined(value)) {
+		value = def;
+	}
+
+	if (is_int) {
+		value = parseInt(value, 10);
+
+		if (isNaN(value)) {
+			value = null;
+		}
+	}
+
+	return value;
 }
 
 function print_info(message, duration) {
@@ -233,12 +265,39 @@ function log_to_file(output, options, data) {
 				mp.utils.write_file(fname, str);
 				result = fname;
 			} catch (e) {
-				print_info('Could not write to log file: ' + e.toString());
+				print_info('Could not write to log file: ' + e);
 			}
 		}
 	}
 
 	return result;
+}
+
+function read_json_options(profile) {
+	var options = null;
+	var fname = '~~/vtrim.json';
+
+	try {
+		var json = mp.utils.read_file(fname);
+
+		try {
+			var parsed = JSON.parse(json);
+			var profile_key = 'profile_' + profile;
+
+			if (profile_key in parsed) {
+				print_info('Using profile: ' + profile);
+				options = parsed[profile_key];
+			} else {
+				options = parsed;
+			}
+		} catch (e) {
+			print_info('Error while parsing JSON options file: ' + e);
+		}
+	} catch (e) {
+		print_info('No JSON options file found.');
+	}
+
+	return options;
 }
 
 // ffmpeg
@@ -816,59 +875,43 @@ function handle_start(options) {
 // Main
 
 (function main() {
-	var ffmpeg = get_opt('ffmpeg', 'ffmpeg');
-	var ffprobe = get_opt('ffprobe', 'ffprobe');
-	var video_bitrate = get_opt('video-bitrate', null);
-	var audio_bitrate = get_opt('audio-bitrate', null);
-	var size_hint = parse_size_hint(get_opt('size-hint', null));
-	var ext = get_opt('ext', null);
-	var loglevel = get_opt('loglevel', 'error');
-	var video_codec = get_opt('video-codec', null);
-	var audio_codec = get_opt('audio-codec', null);
-	var sub_codec = get_opt('sub-codec', get_default_sub_codec(ext));
-	var hooks = parse_hooks(get_opt('hooks', null));
-	var burn_sub = get_opt('burn-sub', 'false') === 'true';
-	var debug = get_opt('debug', 'false') === 'true';
-	var keep_fonts = get_opt('keep-fonts', 'false') === 'true';
 	var temp_dir = get_opt('temp-dir', get_temp_dir());
-	var fonts_dir = get_opt('fonts-dir', join_path(temp_dir, 'fonts'));
-	var ass_dir = get_opt('ass-dir', join_path(temp_dir, 'ass'));
-	var video_dir = get_opt('video-dir', join_path(temp_dir, 'video'));
-	var log_dir = get_opt('log-dir', debug ? join_path(temp_dir, 'log') : null);
-	var crf = get_opt('crf', null);
-	var threads = get_opt('threads', null);
-	var font_fallback = get_opt('font-fallback', null);
+	var profile = get_opt('profile', 'default');
+	var json_options = read_json_options(profile);
+	var ext = get_opt('ext', null);
+	var debug = get_opt('debug', 'false') === 'true';
+	var options = {
+		ffmpeg: get_opt('ffmpeg', 'ffmpeg'),
+		ffprobe: get_opt('ffprobe', 'ffprobe'),
+		video_bitrate: get_opt('video-bitrate', null),
+		audio_bitrate: get_opt('audio-bitrate', null),
+		size_hint: parse_size_hint(get_opt('size-hint', null)),
+		ext: ext,
+		loglevel: get_opt('loglevel', 'error'),
+		video_codec: get_opt('video-codec', null),
+		audio_codec: get_opt('audio-codec', null),
+		sub_codec: get_opt('sub-codec', get_default_sub_codec(ext)),
+		hooks: parse_hooks(get_opt('hooks', null)),
+		burn_sub: get_opt('burn-sub', 'false') === 'true',
+		debug: debug,
+		keep_fonts: get_opt('keep-fonts', 'false') === 'true',
+		fonts_dir: get_opt('fonts-dir', join_path(temp_dir, 'fonts')),
+		ass_dir: get_opt('ass-dir', join_path(temp_dir, 'ass')),
+		video_dir: get_opt('video-dir', join_path(temp_dir, 'video')),
+		log_dir: get_opt('log-dir', debug ? join_path(temp_dir, 'log') : null),
+		crf: get_opt('crf', null, true),
+		threads: get_opt('threads', null, true),
+		font_fallback: get_opt('font-fallback', mp.get_property('sub-font', null))
+	};
+	var merged_options = object_assign({}, options, json_options);
 
 	function create_handler(no_sub, no_audio, detached) {
-		var options = {
-			no_sub: no_sub,
-			no_audio: no_audio,
-			detached: detached,
-			ffmpeg: ffmpeg,
-			ffprobe: ffprobe,
-			video_bitrate: video_bitrate,
-			audio_bitrate: audio_bitrate,
-			size_hint: size_hint,
-			ext: ext,
-			loglevel: loglevel,
-			video_codec: video_codec,
-			audio_codec: audio_codec,
-			sub_codec: sub_codec,
-			hooks: hooks,
-			burn_sub: burn_sub,
-			debug: debug,
-			keep_fonts: keep_fonts,
-			fonts_dir: fonts_dir,
-			ass_dir: ass_dir,
-			video_dir: video_dir,
-			log_dir: log_dir,
-			crf: crf,
-			threads: threads,
-			font_fallback: font_fallback
-		};
-
 		return function handler() {
-			handle_start(options);
+			merged_options.no_sub = no_sub;
+			merged_options.no_audio = no_audio;
+			merged_options.detached = detached;
+
+			handle_start(merged_options);
 		};
 	}
 
