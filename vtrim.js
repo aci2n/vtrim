@@ -38,6 +38,10 @@ function is_undefined(value) {
 	return typeof value === 'undefined';
 }
 
+function truthy_or_zero(value) {
+	return value || value === 0;
+}
+
 function object_assign(target) {
 	if (is_object(target)) {
 		var sources = Array.prototype.slice.call(arguments, 1);
@@ -246,58 +250,27 @@ function get_audio_params() {
 	return mp.get_property_native('audio-params');
 }
 
-function log_to_file(output, options, data) {
+function write_log(output, options, data) {
 	var result = null;
 
 	if (options.log_dir) {
-		var parts = get_file_parts(output);
+		var joined = maybe_join_path(options.log_dir, output);
+		var fname = 'file://' + joined + '.log';
+		var str = data;
 
-		if (parts.name) {
-			var joined = join_path(options.log_dir, parts.name);
-			var fname = 'file://' + joined + '.log';
-			var str = data;
-
-			try {
-				if (!is_string(str)) {
-					str = JSON.stringify(str, null, 2);
-				}
-
-				mp.utils.write_file(fname, str);
-				result = fname;
-			} catch (e) {
-				print_info('Could not write to log file: ' + e);
+		try {
+			if (!is_string(str)) {
+				str = JSON.stringify(str, null, 2);
 			}
+
+			mp.utils.write_file(fname, str);
+			result = fname;
+		} catch (e) {
+			print_info('Could not write to log file: ' + e);
 		}
 	}
 
 	return result;
-}
-
-function read_json_options(profile) {
-	var options = null;
-	var fname = '~~/vtrim.json';
-
-	try {
-		var json = mp.utils.read_file(fname);
-
-		try {
-			var parsed = JSON.parse(json);
-			var profile_key = 'profile_' + profile;
-
-			if (profile_key in parsed) {
-				print_info('Using profile: ' + profile);
-				options = parsed[profile_key];
-			} else {
-				options = parsed;
-			}
-		} catch (e) {
-			print_info('Error while parsing JSON options file: ' + e);
-		}
-	} catch (e) {
-		print_info('No JSON options file found.');
-	}
-
-	return options;
 }
 
 // ffmpeg
@@ -341,7 +314,7 @@ function ffmpeg_subprocess(args, detached, options) {
 	var output = args[args.length - 1];
 	var result = ffmpeg_result(handle, detached, output, process_time);
 
-	log_to_file(output, options, {
+	write_log(output, options, {
 		result: result,
 		args: args
 	});
@@ -685,25 +658,10 @@ function ffmpeg_filters(filters) {
 	return args;
 }
 
-function ffmpeg_get_args(start, end, options) {
-	var path = get_path();
-	var ext = options.ext || path.ext;
-	var context = {
-		input: path.full,
-		output: get_video_output(path.no_ext, ext, start, end, options.video_dir),
-		start: start,
-		ext: ext,
-		end: end,
-		size: ffmpeg_calc_size(options.size_hint, get_video_size()),
-		filters: {
-			video: [],
-			audio: [],
-			complex: []
-		}
-	};
-	var args = ffmpeg_get_initial_args(context, options);
+function ffmpeg_get_optional_args(context, options) {
+	var args = [];
 
-	if (options.crf) {
+	if (truthy_or_zero(options.crf)) {
 		args.push('-crf');
 		args.push(options.crf);
 	}
@@ -723,11 +681,11 @@ function ffmpeg_get_args(start, end, options) {
 		args.push('-c:s');
 		args.push(options.sub_codec);
 	}
-	if (options.video_bitrate) {
+	if (truthy_or_zero(options.video_bitrate)) {
 		args.push('-b:v');
 		args.push(options.video_bitrate);
 	}
-	if (options.audio_bitrate) {
+	if (truthy_or_zero(options.audio_bitrate)) {
 		args.push('-b:a');
 		args.push(options.audio_bitrate);
 	}
@@ -735,6 +693,29 @@ function ffmpeg_get_args(start, end, options) {
 		args.push('-s:v');
 		args.push(context.size);
 	}
+
+	return args;
+}
+
+function ffmpeg_get_args(start, end, options) {
+	var path = get_path();
+	var ext = options.ext || path.ext;
+	var context = {
+		input: path.full,
+		output: get_video_output(path.no_ext, ext, start, end, options.video_dir),
+		start: start,
+		ext: ext,
+		end: end,
+		size: ffmpeg_calc_size(options.size_hint, get_video_size()),
+		filters: {
+			video: [],
+			audio: [],
+			complex: []
+		}
+	};
+	var args = ffmpeg_get_initial_args(context, options);
+
+	args = args.concat(ffmpeg_get_optional_args(context, options));
 	args = args.concat(ffmpeg_map_tracks(context, options));
 	args = args.concat(ffmpeg_filters(context.filters));
 	args.push(context.output);
@@ -833,7 +814,7 @@ function run_hooks(hooks, output) {
 	}
 }
 
-// Handler
+// Options and Bindings
 
 function options_info(options) {
 	var info = '';
@@ -872,6 +853,35 @@ function handle_start(options) {
 	}
 }
 
+function read_json_options(profile) {
+	var options = null;
+	var fname = '~~/vtrim.json';
+
+	try {
+		var json = mp.utils.read_file(fname);
+
+		try {
+			var parsed = JSON.parse(json);
+
+			if (is_object(parsed)) {
+				var profile_key = 'profile_' + profile;
+
+				if (profile_key in parsed) {
+					options = parsed[profile_key];
+				} else {
+					options = parsed;
+				}
+			}
+		} catch (e) {
+			print_info('Error while parsing JSON options file: ' + e);
+		}
+	} catch (e) {
+		print_info('No JSON options file found.');
+	}
+
+	return options;
+}
+
 function get_options() {
 	var temp_dir = get_opt('temp-dir', get_temp_dir());
 	var ext = get_opt('ext', null);
@@ -903,9 +913,11 @@ function get_options() {
 	var profile = get_opt('profile', 'default');
 	var json_options = read_json_options(profile);
 
-	var merged_options = object_assign({}, options, json_options);
+	if (json_options) {
+		object_assign(options, json_options);
+	}
 
-	return merged_options;
+	return options;
 }
 
 function add_bindings(options) {
