@@ -38,10 +38,6 @@ function is_undefined(value) {
 	return typeof value === 'undefined';
 }
 
-function truthy_or_zero(value) {
-	return value || value === 0;
-}
-
 function object_assign(target) {
 	if (is_object(target)) {
 		var sources = Array.prototype.slice.call(arguments, 1);
@@ -175,7 +171,21 @@ function get_path() {
 	};
 }
 
-function get_opt(opt, def, is_int) {
+function coerce_int(value) {
+	var result = parseInt(value, 10);
+
+	if (isNaN(result)) {
+		result = null;
+	}
+
+	return result;
+}
+
+function coerce_bool(value) {
+	return value === 'true';
+}
+
+function get_opt(opt, def, coerce) {
 	var name = script_name() + '-' + opt;
 	var value = mp.get_opt(name);
 
@@ -183,12 +193,8 @@ function get_opt(opt, def, is_int) {
 		value = def;
 	}
 
-	if (is_int) {
-		value = parseInt(value, 10);
-
-		if (isNaN(value)) {
-			value = null;
-		}
+	if (coerce) {
+		value = coerce(value);
 	}
 
 	return value;
@@ -597,18 +603,6 @@ function ffmpeg_map_tracks(context, options) {
 	return args;
 }
 
-function get_default_sub_codec(ext) {
-	switch (ext) {
-	case 'mov':
-	case 'mp4':
-		return 'mov_text';
-	case 'avi':
-		return 'xsub';
-	default:
-		return null;
-	}
-}
-
 function get_video_output(name, ext, start, end, video_dir) {
 	return maybe_join_path(video_dir, name + ' [' + start.toFixed(3) + '-' + end.toFixed(3) + '].' + ext);
 }
@@ -661,7 +655,7 @@ function ffmpeg_filters(filters) {
 function ffmpeg_get_optional_args(context, options) {
 	var args = [];
 
-	if (truthy_or_zero(options.crf)) {
+	if (is_number(options.crf)) {
 		args.push('-crf');
 		args.push(options.crf);
 	}
@@ -681,11 +675,11 @@ function ffmpeg_get_optional_args(context, options) {
 		args.push('-c:s');
 		args.push(options.sub_codec);
 	}
-	if (truthy_or_zero(options.video_bitrate)) {
+	if (is_number(options.video_bitrate)) {
 		args.push('-b:v');
 		args.push(options.video_bitrate);
 	}
-	if (truthy_or_zero(options.audio_bitrate)) {
+	if (is_number(options.audio_bitrate)) {
 		args.push('-b:a');
 		args.push(options.audio_bitrate);
 	}
@@ -816,21 +810,13 @@ function run_hooks(hooks, output) {
 
 // Options and Bindings
 
-function options_info(options) {
-	var info = '';
-
-	for (var key in options) {
-		if (options.hasOwnProperty(key)) {
-			info += ' [' + key + ': ' + JSON.stringify(options[key]) + ']';
-		}
-	}
-
-	return info;
-}
-
 function trim_video(start, end, options) {
 	if (end > start) {
-		print_info('Running...' + options_info(options));
+		if (options.debug) {
+			dump(options);
+		}
+
+		print_info('Running...');
 		var result = run_ffmpeg(start, end, options);
 		print_info(result.message);
 
@@ -882,40 +868,56 @@ function read_json_options(profile) {
 	return options;
 }
 
+function determine_subdirs(options) {
+	var subdirs = [
+		'ass',
+		'fonts',
+		'video',
+		'log'
+	];
+
+	for (var i = 0; i < subdirs.length; i++) {
+		var subdir = subdirs[i];
+		var opt = subdir + '_dir';
+
+		if (!options[opt]) {
+			options[opt] = join_path(options.temp_dir, subdir);
+		}
+	}
+}
+
 function get_options() {
-	var temp_dir = get_opt('temp-dir', get_temp_dir());
-	var ext = get_opt('ext', null);
-	var debug = get_opt('debug', 'false') === 'true';
+	var json_options = read_json_options(get_opt('profile', 'default'));
 	var options = {
 		ffmpeg: get_opt('ffmpeg', 'ffmpeg'),
 		ffprobe: get_opt('ffprobe', 'ffprobe'),
 		video_bitrate: get_opt('video-bitrate', null),
 		audio_bitrate: get_opt('audio-bitrate', null),
 		size_hint: parse_size_hint(get_opt('size-hint', null)),
-		ext: ext,
+		ext: get_opt('ext', null),
 		loglevel: get_opt('loglevel', 'error'),
 		video_codec: get_opt('video-codec', null),
 		audio_codec: get_opt('audio-codec', null),
-		sub_codec: get_opt('sub-codec', get_default_sub_codec(ext)),
+		sub_codec: get_opt('sub-codec', null),
 		hooks: parse_hooks(get_opt('hooks', null)),
-		burn_sub: get_opt('burn-sub', 'false') === 'true',
-		debug: debug,
-		keep_fonts: get_opt('keep-fonts', 'false') === 'true',
-		fonts_dir: get_opt('fonts-dir', join_path(temp_dir, 'fonts')),
-		ass_dir: get_opt('ass-dir', join_path(temp_dir, 'ass')),
-		video_dir: get_opt('video-dir', join_path(temp_dir, 'video')),
-		log_dir: get_opt('log-dir', debug ? join_path(temp_dir, 'log') : null),
-		crf: get_opt('crf', null, true),
-		threads: get_opt('threads', null, true),
+		burn_sub: get_opt('burn-sub', 'false', coerce_bool),
+		debug: get_opt('debug', 'false', coerce_bool),
+		keep_fonts: get_opt('keep-fonts', 'false', coerce_bool),
+		temp_dir: get_opt('temp-dir', get_temp_dir()),
+		ass_dir: get_opt('ass-dir', null),
+		fonts_dir: get_opt('fonts-dir', null),
+		video_dir: get_opt('video-dir', null),
+		log_dir: get_opt('log-dir', null),
+		crf: get_opt('crf', null, coerce_int),
+		threads: get_opt('threads', null, coerce_int),
 		font_fallback: get_opt('font-fallback', mp.get_property('sub-font', null))
 	};
-
-	var profile = get_opt('profile', 'default');
-	var json_options = read_json_options(profile);
 
 	if (json_options) {
 		object_assign(options, json_options);
 	}
+
+	determine_subdirs(options);
 
 	return options;
 }
